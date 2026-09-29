@@ -1,0 +1,29 @@
+name: Ubuntu Panel
+
+on:
+  workflow_dispatch:
+
+jobs:
+  panel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Tailscale
+        run: curl -fsSL https://tailscale.com/install.sh | sh
+
+      - name: Install dependencies
+        run: npm install --omit=dev
+
+      - name: Run panel (starts Tailscale + proxy automatically)
+        env:
+          PANEL_USERNAME: ${{ secrets.PANEL_USERNAME }}
+          PANEL_PASSWORD: ${{ secrets.PANEL_PASSWORD }}
+          TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+          PROXY_CREDENTIALS: ${{ secrets.PROXY_CREDENTIALS }}
+        run: npm start
