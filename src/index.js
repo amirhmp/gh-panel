@@ -1,7 +1,10 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { basicAuth } from "hono/basic-auth";
-import { services } from "./services.js";
+import fs from "node:fs";
+import { bindAddress, services } from "./services.js";
+
+const panelHtml = fs.readFileSync(new URL("./panel.html", import.meta.url), "utf8");
 
 const { PANEL_USERNAME, PANEL_PASSWORD, PANEL_PORT = 3000 } = process.env;
 if (!PANEL_USERNAME || !PANEL_PASSWORD)
@@ -10,9 +13,15 @@ if (!PANEL_USERNAME || !PANEL_PASSWORD)
 const app = new Hono();
 app.use(basicAuth({ username: PANEL_USERNAME, password: PANEL_PASSWORD }));
 
+// Services with `controllable: false` are shown read-only (no start/stop/restart).
+const isControllable = (s) => s.controllable !== false;
+
 app.get("/api/services", async (c) => {
   const entries = await Promise.all(
-    Object.entries(services).map(async ([n, s]) => [n, await s.status()]),
+    Object.entries(services).map(async ([n, s]) => [
+      n,
+      { ...(await s.status()), controllable: isControllable(s) },
+    ]),
   );
   return c.json(Object.fromEntries(entries));
 });
@@ -23,37 +32,53 @@ app.post("/api/services/:name/:action", async (c) => {
   const s = services[name];
   if (!s || !["start", "stop", "restart"].includes(action))
     return c.json({ error: "not found" }, 404);
+  if (!isControllable(s))
+    return c.json({ error: `${name} cannot be controlled from the panel` }, 403);
   try {
     if (action !== "start") await s.stop();
     if (action !== "stop") await s.start(c.req.query());
-    return c.json(await s.status());
+    return c.json({ ...(await s.status()), controllable: true });
   } catch (e) {
     return c.json({ error: e.message }, 500);
   }
 });
 
-app.get("/", (c) =>
-  c.html(`<!doctype html><meta name=viewport content="width=device-width,initial-scale=1">
-<title>Panel</title>
-<style>body{font:16px system-ui;max-width:640px;margin:2rem auto;padding:0 1rem}
-.row{display:flex;gap:.5rem;align-items:center;padding:.6rem 0;border-bottom:1px solid #ddd}
-.row b{flex:1}.dot{width:.7rem;height:.7rem;border-radius:50%;background:#c33}.on{background:#2a2}</style>
-<h1>Services</h1><div id=list></div>
-<script>
-const act = async (n, a) => { const r = await fetch('/api/services/'+n+'/'+a, {method:'POST'}); if(!r.ok) alert((await r.json()).error); load(); };
-const load = async () => {
-  const d = await (await fetch('/api/services')).json();
-  list.innerHTML = Object.entries(d).map(([n,s]) => '<div class=row><span class="dot '+(s.running?'on':'')+'"></span><b>'+n+'</b><small>'+s.info+'</small>'
-    + ['start','stop','restart'].map(a => '<button onclick="act(\\''+n+'\\',\\''+a+'\\')">'+a+'</button>').join('') + '</div>').join('');
-};
-load(); setInterval(load, 5000);
-</script>`),
-);
+// Stops the controllable services and exits; the workflow's last step is
+// `npm start`, so the job finishes as soon as this process ends.
+let shuttingDown = false;
+async function shutdown() {
+  console.log("Shutdown requested from the panel");
+  for (const [name, s] of Object.entries(services)) {
+    if (!isControllable(s)) continue;
+    try {
+      await Promise.race([s.stop(), new Promise((r) => setTimeout(r, 5000))]);
+    } catch (e) {
+      console.error(`[${name}] failed to stop:`, e.message);
+    }
+  }
+  process.exit(0);
+}
 
-serve(
-  { fetch: app.fetch, port: Number(PANEL_PORT), hostname: "0.0.0.0" },
-  async () => {
-    console.log(`Panel listening on :${PANEL_PORT}`);
+app.post("/api/shutdown", (c) => {
+  if (!shuttingDown) {
+    shuttingDown = true;
+    setTimeout(shutdown, 300); // let the response go out first
+  }
+  return c.json({ ok: true });
+});
+
+app.get("/", (c) => c.html(panelHtml));
+
+// Everything listens on the Tailscale IP only, so Tailscale must come up first.
+// If it fails we exit (failing the workflow) rather than expose the panel.
+async function main() {
+  if (!process.env.BIND_ADDRESS) {
+    await services.tailscale.start();
+    console.log("[tailscale] started:", (await services.tailscale.status()).info);
+  }
+  const host = await bindAddress();
+  serve({ fetch: app.fetch, port: Number(PANEL_PORT), hostname: host }, async () => {
+    console.log(`Panel listening on http://${host}:${PANEL_PORT}`);
     for (const [name, s] of Object.entries(services)) {
       if (!s.autostart) continue;
       try {
@@ -63,5 +88,10 @@ serve(
         console.error(`[${name}] failed to start:`, e.message);
       }
     }
-  },
-);
+  });
+}
+
+main().catch((e) => {
+  console.error("Startup failed:", e.message);
+  process.exit(1);
+});

@@ -17,10 +17,18 @@ jobs:
       - name: Install Tailscale
         run: curl -fsSL https://tailscale.com/install.sh | sh
 
+      - name: Install OpenSSH server
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq openssh-server
+          # The panel runs its own sshd, bound to the Tailscale IP only
+          sudo systemctl disable --now ssh.socket || true
+          sudo systemctl disable --now ssh.service || true
+
       - name: Install dependencies
         run: npm install --omit=dev
 
-      - name: Run panel (starts Tailscale + proxy automatically)
+      - name: Run panel (starts Tailscale + SSH + proxy automatically)
         env:
           PANEL_USERNAME: ${{ secrets.PANEL_USERNAME }}
           PANEL_PASSWORD: ${{ secrets.PANEL_PASSWORD }}

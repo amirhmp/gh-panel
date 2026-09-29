@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GH Panel</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f4f5f7;
+        --card: #ffffff;
+        --text: #1b1f24;
+        --muted: #667085;
+        --border: #e4e7ec;
+        --code-bg: #f2f4f7;
+        --accent: #2563eb;
+        --ok: #16a34a;
+        --ok-bg: #dcfce7;
+        --off: #dc2626;
+        --off-bg: #fee2e2;
+        --danger: #dc2626;
+        --shadow:
+          0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.08);
+        --radius: 12px;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0e1116;
+          --card: #171b22;
+          --text: #e7e9ee;
+          --muted: #98a2b3;
+          --border: #272c35;
+          --code-bg: #1f242d;
+          --accent: #6ea8fe;
+          --ok: #4ade80;
+          --ok-bg: rgba(74, 222, 128, 0.14);
+          --off: #f87171;
+          --off-bg: rgba(248, 113, 113, 0.14);
+          --danger: #f87171;
+          --shadow: none;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          16px/1.5 system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+      }
+      main {
+        max-width: 680px;
+        margin: 0 auto;
+        padding: 2rem 1rem 3rem;
+      }
+
+      header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        margin-bottom: 1.25rem;
+      }
+      h1 {
+        margin: 0;
+        font-size: 1.5rem;
+        letter-spacing: -0.01em;
+      }
+      .sub {
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 1rem 1.1rem;
+        margin-bottom: 0.75rem;
+      }
+      .head {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+      }
+      .head h2 {
+        flex: 1;
+        margin: 0;
+        font-size: 1.05rem;
+        text-transform: capitalize;
+      }
+
+      .dot {
+        width: 0.6rem;
+        height: 0.6rem;
+        border-radius: 50%;
+        background: var(--off);
+        flex: none;
+      }
+      .dot.on {
+        background: var(--ok);
+        box-shadow: 0 0 0 4px var(--ok-bg);
+      }
+
+      .badge {
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        padding: 0.15rem 0.55rem;
+        border-radius: 999px;
+        color: var(--off);
+        background: var(--off-bg);
+      }
+      .badge.on {
+        color: var(--ok);
+        background: var(--ok-bg);
+      }
+
+      code {
+        display: inline-block;
+        margin-top: 0.6rem;
+        padding: 0.2rem 0.55rem;
+        background: var(--code-bg);
+        border-radius: 6px;
+        font:
+          0.85rem ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Consolas,
+          monospace;
+        word-break: break-all;
+      }
+      .note {
+        margin: 0.6rem 0 0;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+      .actions {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 0.85rem;
+        flex-wrap: wrap;
+      }
+
+      button {
+        font: inherit;
+        font-size: 0.9rem;
+        font-weight: 500;
+        cursor: pointer;
+        padding: 0.4rem 0.9rem;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--card);
+        color: var(--text);
+        transition:
+          background 0.12s,
+          border-color 0.12s,
+          opacity 0.12s;
+      }
+      button:hover:not(:disabled) {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: progress;
+      }
+      button:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
+      .danger-zone {
+        margin-top: 1.75rem;
+        padding-top: 1.25rem;
+        border-top: 1px dashed var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+      .danger-zone p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.85rem;
+        flex: 1;
+        min-width: 14rem;
+      }
+      button.danger {
+        color: #fff;
+        background: var(--danger);
+        border-color: var(--danger);
+      }
+      button.danger:hover:not(:disabled) {
+        color: #fff;
+        opacity: 0.88;
+        border-color: var(--danger);
+      }
+
+      #toast {
+        position: fixed;
+        left: 50%;
+        bottom: 1.25rem;
+        transform: translate(-50%, 150%);
+        max-width: calc(100% - 2rem);
+        padding: 0.6rem 1rem;
+        border-radius: 8px;
+        background: var(--danger);
+        color: #fff;
+        font-size: 0.9rem;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+        transition: transform 0.2s ease;
+      }
+      #toast.show {
+        transform: translate(-50%, 0);
+      }
+
+      .empty {
+        text-align: center;
+        padding: 3rem 0;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <main id="app">
+      <header>
+        <h1>Services</h1>
+        <span class="sub" id="updated"></span>
+      </header>
+
+      <div id="list"></div>
+
+      <div class="danger-zone">
+        <p>Stops the services and ends the GitHub Actions workflow run.</p>
+        <button id="shutdownBtn" class="danger">
+          Shut down &amp; end workflow
+        </button>
+      </div>
+    </main>
+    <div id="toast" role="alert"></div>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const esc = (v) =>
+        String(v).replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
+        );
+
+      let toastTimer;
+      function toast(msg) {
+        const t = $("toast");
+        t.textContent = msg;
+        t.classList.add("show");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => t.classList.remove("show"), 4000);
+      }
+
+      function render(data) {
+        const entries = Object.entries(data);
+        $("list").innerHTML = entries.length
+          ? entries
+              .map(
+                ([name, s]) => `
+    <section class="card" data-name="${esc(name)}">
+      <div class="head">
+        <span class="dot ${s.running ? "on" : ""}"></span>
+        <h2>${esc(name)}</h2>
+        <span class="badge ${s.running ? "on" : ""}">${s.running ? "running" : "stopped"}</span>
+      </div>
+      ${s.info ? `<code>${esc(s.info)}</code>` : ""}
+      ${
+        s.controllable
+          ? `<div class="actions">${["start", "stop", "restart"]
+              .map((a) => `<button data-action="${a}">${a}</button>`)
+              .join("")}</div>`
+          : '<p class="note">Managed automatically</p>'
+      }
+    </section>`,
+              )
+              .join("")
+          : '<div class="empty">No services</div>';
+      }
+
+      async function load() {
+        try {
+          const r = await fetch("/api/services");
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          render(await r.json());
+          $("updated").textContent =
+            "Updated " + new Date().toLocaleTimeString();
+        } catch (e) {
+          $("updated").textContent = "Connection lost";
+        }
+      }
+
+      $("list").addEventListener("click", async (e) => {
+        const btn = e.target.closest("button[data-action]");
+        if (!btn) return;
+        const card = btn.closest(".card");
+        card.querySelectorAll("button").forEach((b) => (b.disabled = true));
+        try {
+          const r = await fetch(
+            "/api/services/" + card.dataset.name + "/" + btn.dataset.action,
+            { method: "POST" },
+          );
+          if (!r.ok) toast((await r.json()).error || "Request failed");
+        } catch (err) {
+          toast("Request failed: " + err.message);
+        }
+        load();
+      });
+
+      const timer = setInterval(load, 5000);
+      load();
+
+      $("shutdownBtn").addEventListener("click", async () => {
+        if (!confirm("Shut down the panel and end the workflow?")) return;
+        clearInterval(timer);
+        $("shutdownBtn").disabled = true;
+        try {
+          await fetch("/api/shutdown", { method: "POST" });
+        } catch {}
+        $("app").innerHTML =
+          '<div class="empty"><h1>Shut down</h1><p>The workflow is ending.</p></div>';
+      });
+    </script>
+  </body>
+</html>
