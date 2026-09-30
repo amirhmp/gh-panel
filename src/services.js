@@ -1,4 +1,5 @@
 import { execFile, spawn } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import net from "node:net";
@@ -6,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { createProxy } from "proxy";
+import { ConfigError, restoreConfig, seal, snapshotConfig, unseal } from "./router9-config.js";
 
 const run = promisify(execFile);
 const tailscale = (...args) => run("sudo", ["tailscale", ...args]);
@@ -59,8 +61,43 @@ const USERNAME_RE = /^[a-z_][a-z0-9_-]{0,31}$/;
 const SSHD_CONFIG = path.join(os.tmpdir(), "panel-sshd_config");
 const sshdRunning = () => !!sshd && sshd.exitCode === null;
 
+// 9router (npm `9router`, installed globally). Run straight from its bundled
+// Next.js server instead of the CLI, which is interactive and self-updating.
+const ROUTER9_PORT = 20128;
+const ROUTER9_DATA = path.join(os.tmpdir(), "panel-9router");
+const ROUTER9_DB = path.join(ROUTER9_DATA, "db", "data.sqlite");
+const ROUTER9_JWT_SECRET = crypto.randomBytes(32).toString("hex"); // sessions survive service restarts
+// Never hand the panel's own secrets to a third-party app.
+const ROUTER9_HIDDEN_ENV = [
+  "PANEL_USERNAME",
+  "PANEL_PASSWORD",
+  "TAILSCALE_AUTHKEY",
+  "PROXY_CREDENTIALS",
+  "BIND_ADDRESS",
+];
+let router9;
+let router9Url = ""; // set once it accepts connections
+
+const router9Running = () => !!router9 && router9.exitCode === null;
+
+async function router9ServerFile() {
+  let root = "";
+  try {
+    root = (await run("npm", ["root", "-g"])).stdout.trim();
+  } catch {}
+  const dir = path.join(root, "9router", "app");
+  for (const f of ["custom-server.js", "server.js"]) {
+    if (root && fs.existsSync(path.join(dir, f))) return { dir, file: path.join(dir, f) };
+  }
+  throw new Error("9router is not installed (npm install -g 9router)");
+}
+
+const fileStamp = () => new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+
 // Each service: status() -> {running, info}, start(opts), stop().
 // Set `controllable: false` to hide the start/stop/restart controls.
+// Optional `exportConfig() -> {filename, data}` and `importConfig(buffer)` add
+// Export/Import buttons to the panel card.
 // To add a new service, add one more entry here.
 export const services = {
   tailscale: {
@@ -198,5 +235,91 @@ export const services = {
         proxy.close(resolve);
         proxy.closeAllConnections();
       }),
+  },
+
+  // AI gateway (dashboard + OpenAI-compatible API) on the Tailscale IP, port 20128.
+  // Off by default (no `autostart`); enable it from the panel. The dashboard
+  // password is PANEL_PASSWORD. Config can be exported/imported from the panel.
+  "9router": {
+    async status() {
+      const on = router9Running();
+      return { running: on, info: on ? router9Url || "starting..." : "" };
+    },
+    async start() {
+      if (router9Running()) return;
+      const pass = process.env.PANEL_PASSWORD;
+      if (!pass) throw new Error("PANEL_PASSWORD is not set");
+      const host = await bindAddress();
+      const server = await router9ServerFile();
+      fs.mkdirSync(ROUTER9_DATA, { recursive: true });
+
+      const env = { ...process.env };
+      for (const k of ROUTER9_HIDDEN_ENV) delete env[k];
+      Object.assign(env, {
+        PORT: String(ROUTER9_PORT),
+        HOSTNAME: host,
+        DATA_DIR: ROUTER9_DATA,
+        INITIAL_PASSWORD: pass,
+        JWT_SECRET: ROUTER9_JWT_SECRET,
+        REQUIRE_API_KEY: "true",
+        NEXT_TELEMETRY_DISABLED: "1",
+      });
+
+      let tail = "";
+      const p = spawn(
+        process.execPath,
+        ["--dns-result-order=ipv4first", server.file],
+        { cwd: server.dir, env },
+      );
+      const keep = (d) => (tail = (tail + d).slice(-2000));
+      p.stdout.on("data", keep);
+      p.stderr.on("data", keep);
+      p.on("exit", () => {
+        if (router9 === p) router9Url = "";
+      });
+      router9 = p;
+      router9Url = "";
+
+      for (let i = 0; i < 120; i++) {
+        if (!router9Running())
+          throw new Error(`9router exited: ${tail.trim().split("\n").pop() || "unknown error"}`);
+        if (await canConnect(host, ROUTER9_PORT)) {
+          router9Url = `http://${host}:${ROUTER9_PORT}/dashboard`;
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      p.kill("SIGKILL");
+      throw new Error(`9router did not start listening on ${host}:${ROUTER9_PORT}`);
+    },
+    stop: () =>
+      new Promise((resolve) => {
+        if (!router9Running()) return resolve();
+        const p = router9;
+        const t = setTimeout(() => p.kill("SIGKILL"), 5000);
+        p.once("exit", () => (clearTimeout(t), resolve()));
+        p.kill("SIGTERM");
+      }),
+
+    // Provider keys, combos and settings, encrypted with PANEL_PASSWORD.
+    async exportConfig() {
+      if (!fs.existsSync(ROUTER9_DB))
+        throw new ConfigError("Nothing to export yet: start 9router once first", 409);
+      const data = seal(await snapshotConfig(ROUTER9_DB), process.env.PANEL_PASSWORD);
+      return { filename: `9router-config-${fileStamp()}.ghp9r`, data };
+    },
+    async importConfig(blob) {
+      const self = services["9router"];
+      const wasRunning = router9Running();
+      const sqlite = unseal(blob, process.env.PANEL_PASSWORD);
+      await restoreConfig(ROUTER9_DB, sqlite, () => self.stop());
+      if (wasRunning) {
+        try {
+          await self.start();
+        } catch (e) {
+          throw new Error(`Config imported, but 9router failed to start: ${e.message}`);
+        }
+      }
+    },
   },
 };

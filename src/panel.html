@@ -138,6 +138,13 @@
           monospace;
         word-break: break-all;
       }
+      code a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      code a:hover {
+        text-decoration: underline;
+      }
       .note {
         margin: 0.6rem 0 0;
         color: var(--muted);
@@ -220,6 +227,10 @@
         box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
         transition: transform 0.2s ease;
       }
+      #toast.info {
+        background: var(--text);
+        color: var(--bg);
+      }
       #toast.show {
         transform: translate(-50%, 0);
       }
@@ -247,6 +258,7 @@
         </button>
       </div>
     </main>
+    <input type="file" id="importFile" hidden />
     <div id="toast" role="alert"></div>
 
     <script>
@@ -265,9 +277,10 @@
         );
 
       let toastTimer;
-      function toast(msg) {
+      function toast(msg, kind = "error") {
         const t = $("toast");
         t.textContent = msg;
+        t.className = kind === "info" ? "info" : "";
         t.classList.add("show");
         clearTimeout(toastTimer);
         toastTimer = setTimeout(() => t.classList.remove("show"), 4000);
@@ -285,13 +298,30 @@
         <h2>${esc(name)}</h2>
         <span class="badge ${s.running ? "on" : ""}">${s.running ? "running" : "stopped"}</span>
       </div>
-      ${s.info ? `<code>${esc(s.info)}</code>` : ""}
+      ${
+        s.info
+          ? `<code>${
+              /^https?:\/\//.test(s.info)
+                ? `<a href="${esc(s.info)}" target="_blank" rel="noopener">${esc(s.info)}</a>`
+                : esc(s.info)
+            }</code>`
+          : ""
+      }
       ${
         s.controllable
           ? `<div class="actions">${["start", "stop", "restart"]
               .map((a) => `<button data-action="${a}">${a}</button>`)
               .join("")}</div>`
           : '<p class="note">Managed automatically</p>'
+      }
+      ${
+        s.configurable
+          ? `<div class="actions">
+              <button data-config="export">export config</button>
+              <button data-config="import">import config</button>
+            </div>
+            <p class="note">Encrypted with the panel password. Import replaces the current config.</p>`
+          : ""
       }
     </section>`,
               )
@@ -324,6 +354,67 @@
           if (!r.ok) toast((await r.json()).error || "Request failed");
         } catch (err) {
           toast("Request failed: " + err.message);
+        }
+        load();
+      });
+
+      // Export / import of a service's configuration.
+      let importTarget = "";
+
+      async function exportConfig(name) {
+        const r = await fetch("/api/services/" + name + "/config");
+        if (!r.ok) throw new Error((await r.json()).error || "Export failed");
+        const blob = await r.blob();
+        const cd = r.headers.get("content-disposition") || "";
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = (/filename="([^"]+)"/.exec(cd) || [])[1] || name + "-config.bin";
+        document.body.append(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        toast("Config exported", "info");
+      }
+
+      async function importConfig(name, file) {
+        const r = await fetch("/api/services/" + name + "/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream" },
+          body: await file.arrayBuffer(),
+        });
+        if (!r.ok) throw new Error((await r.json()).error || "Import failed");
+        toast("Config imported", "info");
+      }
+
+      $("list").addEventListener("click", async (e) => {
+        const btn = e.target.closest("button[data-config]");
+        if (!btn) return;
+        const name = btn.closest(".card").dataset.name;
+        if (btn.dataset.config === "import") {
+          importTarget = name;
+          $("importFile").value = "";
+          $("importFile").click();
+          return;
+        }
+        btn.disabled = true;
+        try {
+          await exportConfig(name);
+        } catch (err) {
+          toast(err.message);
+        }
+        btn.disabled = false;
+      });
+
+      $("importFile").addEventListener("change", async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        if (!confirm("Import " + file.name + " into " + importTarget + "? This replaces its current config and restarts it if it is running."))
+          return;
+        document.querySelectorAll(".card button").forEach((b) => (b.disabled = true));
+        try {
+          await importConfig(importTarget, file);
+        } catch (err) {
+          toast(err.message);
         }
         load();
       });

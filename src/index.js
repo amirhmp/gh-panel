@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { basicAuth } from "hono/basic-auth";
+import { bodyLimit } from "hono/body-limit";
 import fs from "node:fs";
 import { bindAddress, services } from "./services.js";
 
@@ -16,15 +17,63 @@ app.use(basicAuth({ username: PANEL_USERNAME, password: PANEL_PASSWORD }));
 // Services with `controllable: false` are shown read-only (no start/stop/restart).
 const isControllable = (s) => s.controllable !== false;
 
+// Services with exportConfig() get Export/Import buttons in the panel.
+const view = async (s) => ({
+  ...(await s.status()),
+  controllable: isControllable(s),
+  configurable: typeof s.exportConfig === "function",
+});
+
 app.get("/api/services", async (c) => {
   const entries = await Promise.all(
-    Object.entries(services).map(async ([n, s]) => [
-      n,
-      { ...(await s.status()), controllable: isControllable(s) },
-    ]),
+    Object.entries(services).map(async ([n, s]) => [n, await view(s)]),
   );
   return c.json(Object.fromEntries(entries));
 });
+
+// Save/load a service's configuration (encrypted with PANEL_PASSWORD).
+// Registered before the /:action route below so "config" is not read as an action.
+const MAX_CONFIG_BYTES = 25 * 1024 * 1024;
+let configBusy = false;
+
+app.get("/api/services/:name/config", async (c) => {
+  const s = services[c.req.param("name")];
+  if (!s?.exportConfig) return c.json({ error: "not found" }, 404);
+  try {
+    const { filename, data } = await s.exportConfig();
+    return c.body(data, 200, {
+      "Content-Type": "application/octet-stream",
+      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Cache-Control": "no-store",
+    });
+  } catch (e) {
+    return c.json({ error: e.message }, e.status ?? 500);
+  }
+});
+
+app.post(
+  "/api/services/:name/config",
+  bodyLimit({
+    maxSize: MAX_CONFIG_BYTES,
+    onError: (c) => c.json({ error: "config file is too large" }, 413),
+  }),
+  async (c) => {
+    const s = services[c.req.param("name")];
+    if (!s?.importConfig) return c.json({ error: "not found" }, 404);
+    if (configBusy) return c.json({ error: "another import is in progress" }, 409);
+    configBusy = true;
+    try {
+      const body = Buffer.from(await c.req.arrayBuffer());
+      if (!body.length) return c.json({ error: "empty file" }, 400);
+      await s.importConfig(body);
+      return c.json(await view(s));
+    } catch (e) {
+      return c.json({ error: e.message }, e.status ?? 500);
+    } finally {
+      configBusy = false;
+    }
+  },
+);
 
 // POST /api/services/:name/(start|stop|restart)?port=1234
 app.post("/api/services/:name/:action", async (c) => {
@@ -37,7 +86,7 @@ app.post("/api/services/:name/:action", async (c) => {
   try {
     if (action !== "start") await s.stop();
     if (action !== "stop") await s.start(c.req.query());
-    return c.json({ ...(await s.status()), controllable: true });
+    return c.json(await view(s));
   } catch (e) {
     return c.json({ error: e.message }, 500);
   }
