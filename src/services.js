@@ -127,8 +127,8 @@ export const services = {
 
   // OpenSSH server that logs in with the panel username/password.
   // Listens on the Tailscale IP only, so it is not reachable from the internet.
+  // Off by default (no `autostart`); enable it from the panel.
   ssh: {
-    autostart: true,
     async status() {
       const on = sshdRunning();
       return { running: on, info: on ? sshInfo : "" };

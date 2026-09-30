@@ -34,7 +34,7 @@ jobs:
       - name: Install 9router
         run: npm install -g 9router@latest --ignore-scripts
 
-      - name: Run panel (starts Tailscale + SSH + proxy automatically; 9router stays off until enabled)
+      - name: Run panel (starts Tailscale + proxy automatically; SSH and 9router stay off until enabled)
         env:
           PANEL_USERNAME: ${{ secrets.PANEL_USERNAME }}
           PANEL_PASSWORD: ${{ secrets.PANEL_PASSWORD }}

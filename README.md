@@ -5,13 +5,13 @@ A Hono control panel running on a GitHub Actions Ubuntu runner. It manages servi
 | Service     | What it does                                                     |
 |-------------|------------------------------------------------------------------|
 | `tailscale` | Joins your tailnet so you can reach the runner (status only, not controllable from the panel) |
-| `ssh`       | OpenSSH server on port **22**, bound to the Tailscale IP only; log in with the panel username/password |
+| `ssh`       | OpenSSH server on port **22**, bound to the Tailscale IP only; log in with the panel username/password. **Off by default**: enable it from the panel |
 | `proxy`     | HTTP/HTTPS proxy (npm [`proxy`](https://github.com/TooTallNate/proxy-agents/tree/main/packages/proxy)) on port **3128**, bound to the Tailscale IP only |
 | `9router`   | [9router](https://github.com/decolua/9router) AI gateway (dashboard + OpenAI-compatible API) on port **20128**, bound to the Tailscale IP only. **Off by default**: enable it from the panel |
 
-Tailscale starts first, then the panel (port **3000**), then `ssh` and `proxy`. The panel, `ssh`, `proxy` and `9router` listen on the **Tailscale IP only**, so nothing is reachable from outside your tailnet. If Tailscale fails to come up, the panel exits and the workflow fails instead of exposing anything.
+Tailscale starts first, then the panel (port **3000**), then `proxy`. `ssh` and `9router` stay off until you start them from the panel. The panel, `ssh`, `proxy` and `9router` listen on the **Tailscale IP only**, so nothing is reachable from outside your tailnet. If Tailscale fails to come up, the panel exits and the workflow fails instead of exposing anything.
 
-Once running, use the panel to stop/start/restart `ssh`, `proxy` and `9router`. The **Shut down** button stops them and ends the workflow.
+Once running, use the panel to start/stop/restart `ssh`, `proxy` and `9router`. The **Shut down** button stops them and ends the workflow.
 
 ## GitHub secrets (Settings → Secrets and variables → Actions)
 
@@ -31,7 +31,7 @@ No extra secrets are needed for 9router: its dashboard password is `PANEL_PASSWO
 3. From a device on your tailnet:
    - Panel: `http://100.x.y.z:3000` (log in with `PANEL_USERNAME` / `PANEL_PASSWORD`)
    - Proxy: `curl -x http://proxyuser:S3cret-Proxy-Pass@100.x.y.z:3128 https://ifconfig.me`
-   - SSH: `ssh admin@100.x.y.z` (password = `PANEL_PASSWORD`; the user is in the `sudo` group and `sudo` asks for the same password)
+   - SSH (press **start** on the `ssh` card first): `ssh admin@100.x.y.z` (password = `PANEL_PASSWORD`; the user is in the `sudo` group and `sudo` asks for the same password)
 
 ## 9router
 
