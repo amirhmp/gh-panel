@@ -11,7 +11,9 @@ A Hono control panel running on a GitHub Actions Ubuntu runner. It manages servi
 
 Tailscale starts first, then the panel (port **3000**), then `proxy`. `ssh` and `9router` stay off until you start them from the panel. The panel, `ssh`, `proxy` and `9router` listen on the **Tailscale IP only**, so nothing is reachable from outside your tailnet. If Tailscale fails to come up, the panel exits and the workflow fails instead of exposing anything.
 
-Once running, use the panel to start/stop/restart `ssh`, `proxy` and `9router`. The **Shut down** button stops them and ends the workflow.
+The top of the panel is a single **Server** card with: the runner's public IP and approximate location (city, region, country, map link) and provider, the server time and timezone, a live **uptime** timer (how long the VM has been on) with its boot time, a table of the **network traffic since boot per interface** (received / sent / total; `eth0` is listed first and highlighted, with a total row), and the **Shut down & end workflow** button. The IP is looked up by the server, so it is the runner's IP (the one the proxy exits from), not your own; the location is the data center's, not a precise address. Traffic comes from the kernel counters in `/proc/net/dev`, so it includes the runner's own setup downloads (apt, npm, Tailscale). The total row sums all listed interfaces, so traffic that crosses a virtual interface (e.g. `tailscale0`) and `eth0` is counted in both; the `eth0` row is the real internet traffic. The IP is also printed in the job log as `[runner] public IP: ...`.
+
+Once running, use the panel to start/stop/restart `ssh`, `proxy` and `9router`. The **Shut down** button (in the Server card) stops them and ends the workflow.
 
 ## GitHub secrets (Settings → Secrets and variables → Actions)
 
@@ -47,6 +49,8 @@ Export works while 9router is running, but only once it has been started at leas
 ## API
 
 - `GET  /api/services`
+- `GET  /api/system` — server time, timezone, uptime and network traffic since boot
+- `GET  /api/runner` — the runner's public IP and approximate location (`?refresh=1` forces a new lookup)
 - `POST /api/services/:name/(start|stop|restart)` — the proxy also accepts `?port=8080`; `tailscale` returns 403
 - `GET  /api/services/9router/config` — download the encrypted 9router config
 - `POST /api/services/9router/config` — upload one (`Content-Type: application/octet-stream`, max 25 MB)
@@ -64,7 +68,9 @@ Export works while 9router is running, but only once it has been started at leas
 
 - `src/index.js` — Hono server, API, startup/shutdown
 - `src/services.js` — service definitions (tailscale, ssh, proxy, 9router)
+- `src/runner-info.js` — public IP + geolocation lookup (ipinfo.io, falling back to ipwho.is, then ipify.org; cached 10 min)
 - `src/router9-config.js` — 9router config export/import (encryption, DB snapshot and restore)
+- `src/system-info.js` — uptime, server time and per-interface traffic counters (`/proc/net/dev`, Linux only)
 - `src/panel.html` — the panel UI (HTML, CSS and JS in one file)
 
 ## Adding a service

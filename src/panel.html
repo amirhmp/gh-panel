@@ -185,9 +185,101 @@
         outline-offset: 2px;
       }
 
+      .kv {
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: 0.35rem 1rem;
+        margin: 0.75rem 0 0;
+        font-size: 0.92rem;
+      }
+      .kv dt {
+        color: var(--muted);
+      }
+      .kv dd {
+        margin: 0;
+        min-width: 0;
+        word-break: break-word;
+        font-variant-numeric: tabular-nums;
+      }
+      .kv .row {
+        display: contents;
+      }
+      .kv .row[hidden] {
+        display: none;
+      }
+      .kv code {
+        margin: 0;
+        user-select: all; /* one click selects the whole IP for copying */
+      }
+      .kv a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      .kv a:hover {
+        text-decoration: underline;
+      }
+      #runner {
+        margin-bottom: 1.75rem;
+      }
+      .traffic-wrap {
+        margin-top: 1rem;
+        overflow-x: auto;
+      }
+      .traffic {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+        font-variant-numeric: tabular-nums;
+      }
+      .traffic caption {
+        text-align: left;
+        color: var(--muted);
+        padding-bottom: 0.4rem;
+      }
+      .traffic th,
+      .traffic td {
+        padding: 0.4rem 0.6rem;
+        text-align: right;
+        white-space: nowrap;
+        border-bottom: 1px solid var(--border);
+      }
+      .traffic th:first-child,
+      .traffic td:first-child {
+        text-align: left;
+      }
+      .traffic th {
+        color: var(--muted);
+        font-weight: 500;
+      }
+      .traffic tr.main td {
+        background: color-mix(in srgb, var(--accent) 13%, transparent);
+        font-weight: 600;
+      }
+      .traffic tr.main td:first-child {
+        box-shadow: inset 3px 0 0 var(--accent);
+      }
+      .traffic .badge-inet {
+        margin-left: 0.4rem;
+        padding: 0.05rem 0.45rem;
+        border-radius: 999px;
+        background: var(--accent);
+        color: var(--card);
+        font-size: 0.7rem;
+        font-weight: 600;
+        vertical-align: 1px;
+      }
+      .traffic tfoot td {
+        font-weight: 700;
+        border-top: 2px solid var(--border);
+        border-bottom: 0;
+      }
+      #runner .head h2 {
+        text-transform: none;
+      }
+
       .danger-zone {
-        margin-top: 1.75rem;
-        padding-top: 1.25rem;
+        margin-top: 1rem;
+        padding-top: 1rem;
         border-top: 1px dashed var(--border);
         display: flex;
         align-items: center;
@@ -244,6 +336,76 @@
   </head>
   <body>
     <main id="app">
+      <section class="card" id="runner">
+        <div class="head">
+          <h2>Server</h2>
+          <button id="runnerRefresh" type="button">refresh</button>
+        </div>
+        <dl class="kv">
+          <div class="row">
+            <dt>Public IP</dt>
+            <dd><code id="ipVal">Loading…</code></dd>
+          </div>
+          <div class="row" id="rowLoc" hidden>
+            <dt>Location</dt>
+            <dd id="locVal"></dd>
+          </div>
+          <div class="row" id="rowOrg" hidden>
+            <dt>Provider</dt>
+            <dd id="orgVal"></dd>
+          </div>
+          <div class="row">
+            <dt>Server time</dt>
+            <dd id="timeVal">…</dd>
+          </div>
+          <div class="row">
+            <dt>Uptime</dt>
+            <dd id="upVal">…</dd>
+          </div>
+          <div class="row">
+            <dt>Booted</dt>
+            <dd id="bootVal">…</dd>
+          </div>
+        </dl>
+        <div class="traffic-wrap" id="trafWrap" hidden>
+          <table class="traffic">
+            <caption>
+              Network traffic since boot, by interface
+            </caption>
+            <thead>
+              <tr>
+                <th>Interface</th>
+                <th>↓ Received</th>
+                <th>↑ Sent</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody id="trafBody"></tbody>
+            <tfoot>
+              <tr>
+                <td>Total</td>
+                <td id="totRx"></td>
+                <td id="totTx"></td>
+                <td id="totAll"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <p class="note">
+          Location is approximate (IP geolocation of the data center). Traffic
+          counts since the VM booted and includes setup downloads. The
+          highlighted interface is the real internet traffic; virtual
+          interfaces (tailscale0, docker0…) also cross it, so the total can
+          count the same bytes twice.
+        </p>
+        <div class="danger-zone">
+          <p>Stops the services and ends the GitHub Actions workflow run.</p>
+          <button id="shutdownBtn" class="danger">
+            Shut down &amp; end workflow
+          </button>
+        </div>
+      </section>
+
       <header>
         <h1>Services</h1>
         <span class="sub" id="updated"></span>
@@ -251,12 +413,6 @@
 
       <div id="list"></div>
 
-      <div class="danger-zone">
-        <p>Stops the services and ends the GitHub Actions workflow run.</p>
-        <button id="shutdownBtn" class="danger">
-          Shut down &amp; end workflow
-        </button>
-      </div>
     </main>
     <input type="file" id="importFile" hidden />
     <div id="toast" role="alert"></div>
@@ -419,12 +575,133 @@
         load();
       });
 
-      const timer = setInterval(load, 5000);
+      // ---- Server card: public IP/location (cached on the server) and live VM facts.
+      const flag = (cc) =>
+        /^[A-Z]{2}$/.test(cc)
+          ? String.fromCodePoint(...[...cc].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65))
+          : "";
+      const pad = (n) => String(n).padStart(2, "0");
+
+      function fmtBytes(n) {
+        const u = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
+        let i = 0;
+        while (n >= 1024 && i < u.length - 1) (n /= 1024), i++;
+        return (i ? n.toFixed(n < 10 ? 2 : 1) : n) + " " + u[i];
+      }
+      function fmtDuration(sec) {
+        const s = Math.max(0, Math.floor(sec));
+        const d = Math.floor(s / 86400);
+        return (
+          (d ? d + "d " : "") +
+          pad(Math.floor((s % 86400) / 3600)) + ":" +
+          pad(Math.floor((s % 3600) / 60)) + ":" +
+          pad(s % 60)
+        );
+      }
+      function fmtTime(ms, tz) {
+        try {
+          return new Date(ms).toLocaleString("sv-SE", { timeZone: tz }) + " " + tz;
+        } catch {
+          return new Date(ms).toISOString().replace("T", " ").slice(0, 19) + " UTC";
+        }
+      }
+
+      function renderRunner(i) {
+        $("ipVal").textContent = i.ip;
+        const place = [i.city, i.region, i.country].filter(Boolean).join(", ");
+        const loc = $("locVal");
+        loc.textContent = place ? [flag(i.countryCode), place].filter(Boolean).join(" ") : "";
+        if (place && i.loc) {
+          const [lat, lon] = i.loc.split(",");
+          const a = document.createElement("a");
+          a.href = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=9/${lat}/${lon}`;
+          a.target = "_blank";
+          a.rel = "noopener noreferrer";
+          a.textContent = "map";
+          loc.append(" · ", a);
+        }
+        $("rowLoc").hidden = !place;
+        $("orgVal").textContent = i.org || "";
+        $("rowOrg").hidden = !i.org;
+      }
+
+      async function loadRunner(refresh = false) {
+        const btn = $("runnerRefresh");
+        btn.disabled = true;
+        try {
+          const r = await fetch("/api/runner" + (refresh ? "?refresh=1" : ""));
+          const data = await r.json();
+          if (!r.ok) throw new Error(data.error || "HTTP " + r.status);
+          renderRunner(data);
+        } catch (e) {
+          $("ipVal").textContent = "Unavailable: " + e.message;
+        }
+        btn.disabled = false;
+      }
+
+      // Uptime and server time tick every second between polls.
+      let sys = null;
+      function tick() {
+        if (!sys || !$("timeVal")) return;
+        const dt = Date.now() - sys.at;
+        $("timeVal").textContent = fmtTime(sys.serverTime + dt, sys.timezone);
+        $("upVal").textContent = fmtDuration(sys.uptimeSeconds + dt / 1000);
+      }
+
+      function renderSystem(d) {
+        sys = { ...d, at: Date.now() };
+        $("bootVal").textContent = fmtTime(d.serverTime - d.uptimeSeconds * 1000, d.timezone);
+        const t = d.traffic;
+        $("trafWrap").hidden = !t;
+        if (t) {
+          $("trafBody").replaceChildren(
+            ...t.interfaces.map((i) => {
+              const tr = document.createElement("tr");
+              if (i.main) tr.className = "main";
+              [i.name, fmtBytes(i.rx), fmtBytes(i.tx), fmtBytes(i.rx + i.tx)].forEach((v, k) => {
+                const td = document.createElement("td");
+                td.textContent = v;
+                if (k === 0 && i.main) {
+                  const b = document.createElement("span");
+                  b.className = "badge-inet";
+                  b.textContent = "internet";
+                  td.append(b);
+                }
+                tr.append(td);
+              });
+              return tr;
+            }),
+          );
+          $("totRx").textContent = fmtBytes(t.total.rx);
+          $("totTx").textContent = fmtBytes(t.total.tx);
+          $("totAll").textContent = fmtBytes(t.total.rx + t.total.tx);
+        }
+        tick();
+      }
+
+      async function loadSystem() {
+        try {
+          const r = await fetch("/api/system");
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          renderSystem(await r.json());
+        } catch {}
+      }
+
+      $("runnerRefresh").addEventListener("click", () => loadRunner(true));
+      loadRunner();
+      loadSystem();
+      const tickTimer = setInterval(tick, 1000);
+
+      const timer = setInterval(() => {
+        load();
+        loadSystem();
+      }, 5000);
       load();
 
       $("shutdownBtn").addEventListener("click", async () => {
         if (!confirm("Shut down the panel and end the workflow?")) return;
         clearInterval(timer);
+        clearInterval(tickTimer);
         $("shutdownBtn").disabled = true;
         try {
           await fetch("/api/shutdown", { method: "POST" });

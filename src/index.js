@@ -3,9 +3,14 @@ import { Hono } from "hono";
 import { basicAuth } from "hono/basic-auth";
 import { bodyLimit } from "hono/body-limit";
 import fs from "node:fs";
+import { getRunnerInfo } from "./runner-info.js";
 import { bindAddress, services } from "./services.js";
+import { getSystemInfo } from "./system-info.js";
 
-const panelHtml = fs.readFileSync(new URL("./panel.html", import.meta.url), "utf8");
+const panelHtml = fs.readFileSync(
+  new URL("./panel.html", import.meta.url),
+  "utf8",
+);
 
 const { PANEL_USERNAME, PANEL_PASSWORD, PANEL_PORT = 3000 } = process.env;
 if (!PANEL_USERNAME || !PANEL_PASSWORD)
@@ -30,6 +35,24 @@ app.get("/api/services", async (c) => {
   );
   return c.json(Object.fromEntries(entries));
 });
+
+// Public IP and approximate location of the runner (looked up server-side, cached).
+// GET /api/runner?refresh=1 forces a new lookup.
+app.get("/api/runner", async (c) => {
+  try {
+    const info = await getRunnerInfo({
+      refresh: c.req.query("refresh") === "1",
+    });
+    return c.json(info, 200, { "Cache-Control": "no-store" });
+  } catch (e) {
+    return c.json({ error: e.message }, 502);
+  }
+});
+
+// Live VM facts: uptime, server time and network traffic since boot (cheap, uncached).
+app.get("/api/system", (c) =>
+  c.json(getSystemInfo(), 200, { "Cache-Control": "no-store" }),
+);
 
 // Save/load a service's configuration (encrypted with PANEL_PASSWORD).
 // Registered before the /:action route below so "config" is not read as an action.
@@ -60,7 +83,8 @@ app.post(
   async (c) => {
     const s = services[c.req.param("name")];
     if (!s?.importConfig) return c.json({ error: "not found" }, 404);
-    if (configBusy) return c.json({ error: "another import is in progress" }, 409);
+    if (configBusy)
+      return c.json({ error: "another import is in progress" }, 409);
     configBusy = true;
     try {
       const body = Buffer.from(await c.req.arrayBuffer());
@@ -82,7 +106,10 @@ app.post("/api/services/:name/:action", async (c) => {
   if (!s || !["start", "stop", "restart"].includes(action))
     return c.json({ error: "not found" }, 404);
   if (!isControllable(s))
-    return c.json({ error: `${name} cannot be controlled from the panel` }, 403);
+    return c.json(
+      { error: `${name} cannot be controlled from the panel` },
+      403,
+    );
   try {
     if (action !== "start") await s.stop();
     if (action !== "stop") await s.start(c.req.query());
@@ -123,21 +150,34 @@ app.get("/", (c) => c.html(panelHtml));
 async function main() {
   if (!process.env.BIND_ADDRESS) {
     await services.tailscale.start();
-    console.log("[tailscale] started:", (await services.tailscale.status()).info);
+    console.log(
+      "[tailscale] started:",
+      (await services.tailscale.status()).info,
+    );
   }
   const host = await bindAddress();
-  serve({ fetch: app.fetch, port: Number(PANEL_PORT), hostname: host }, async () => {
-    console.log(`Panel listening on http://${host}:${PANEL_PORT}`);
-    for (const [name, s] of Object.entries(services)) {
-      if (!s.autostart) continue;
-      try {
-        await s.start();
-        console.log(`[${name}] started:`, (await s.status()).info);
-      } catch (e) {
-        console.error(`[${name}] failed to start:`, e.message);
+  serve(
+    { fetch: app.fetch, port: Number(PANEL_PORT), hostname: host },
+    async () => {
+      console.log(`Panel listening on http://${host}:${PANEL_PORT}`);
+      getRunnerInfo()
+        .then((r) =>
+          console.log(
+            `[runner] public IP: ${r.ip}${r.city || r.country ? ` (${[r.city, r.country].filter(Boolean).join(", ")})` : ""}`,
+          ),
+        )
+        .catch((e) => console.error("[runner]", e.message));
+      for (const [name, s] of Object.entries(services)) {
+        if (!s.autostart) continue;
+        try {
+          await s.start();
+          console.log(`[${name}] started:`, (await s.status()).info);
+        } catch (e) {
+          console.error(`[${name}] failed to start:`, e.message);
+        }
       }
-    }
-  });
+    },
+  );
 }
 
 main().catch((e) => {
