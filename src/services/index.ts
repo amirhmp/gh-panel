@@ -1,6 +1,7 @@
 import type { Config } from "../config";
 import { ProxyService } from "./proxy";
 import { Router9Service } from "./router9";
+import { SocksService } from "./socks";
 import { SshService } from "./ssh";
 import { TailscaleService } from "./tailscale";
 import type { Service } from "./types";
@@ -15,6 +16,7 @@ export function createServices(config: Config) {
     tailscale: new TailscaleService(config),
     ssh: new SshService(config),
     proxy: new ProxyService(config),
+    socks: new SocksService(config),
     "9router": new Router9Service(config),
   } satisfies Record<string, Service>;
 }

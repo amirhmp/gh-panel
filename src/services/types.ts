@@ -1,7 +1,7 @@
 import type { ServiceStatus } from "../shared/types";
 
 export interface StartOptions {
-  /** Only the proxy uses it (?port=8080). */
+  /** Only the proxy and socks services use it (?port=8080). */
   port?: string | number;
 }
 
