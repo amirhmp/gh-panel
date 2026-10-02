@@ -1,0 +1,24 @@
+/* Transient message at the bottom of the screen. */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 1.25rem;
+  transform: translate(-50%, 150%);
+  max-width: calc(100% - 2rem);
+  padding: 0.6rem 1rem;
+  border-radius: 8px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 0.9rem;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  transition: transform 0.2s ease;
+}
+
+.toast--info {
+  background: var(--text);
+  color: var(--bg);
+}
+
+.toast--show {
+  transform: translate(-50%, 0);
+}

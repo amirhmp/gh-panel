@@ -25,8 +25,15 @@ jobs:
           sudo systemctl disable --now ssh.socket || true
           sudo systemctl disable --now ssh.service || true
 
+      # The panel is TypeScript: build it (dist/), then drop the dev toolchain.
       - name: Install dependencies
-        run: npm install --omit=dev
+        run: npm ci
+
+      - name: Build panel
+        run: npm run build
+
+      - name: Remove dev dependencies
+        run: npm prune --omit=dev
 
       # Installed but not started: the panel enables it on demand (off by default).
       # --ignore-scripts skips its postinstall (it only pre-fetches optional SQLite

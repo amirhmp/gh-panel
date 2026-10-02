@@ -1,4 +1,5 @@
 import net from "node:net";
+import type { RunnerInfo } from "../shared/types";
 
 // Public IP + approximate location of this runner, as seen from the internet.
 // It must be looked up from the runner itself (not the browser): the panel is
@@ -15,7 +16,7 @@ const countryNames = (() => {
     return null;
   }
 })();
-const countryName = (code) => {
+const countryName = (code: string): string => {
   try {
     return (code && countryNames?.of(code)) || "";
   } catch {
@@ -23,7 +24,24 @@ const countryName = (code) => {
   }
 };
 
-const PROVIDERS = [
+/** What a provider may know; everything but `ip` is optional. */
+interface RawInfo {
+  ip: unknown;
+  city?: unknown;
+  region?: unknown;
+  countryCode?: unknown;
+  org?: unknown;
+  timezone?: unknown;
+  loc?: unknown;
+}
+
+interface Provider {
+  name: string;
+  url: string;
+  parse(json: any): RawInfo;
+}
+
+const PROVIDERS: Provider[] = [
   {
     name: "ipinfo.io",
     url: "https://ipinfo.io/json",
@@ -60,21 +78,24 @@ const PROVIDERS = [
   },
 ];
 
-const str = (v) => (typeof v === "string" ? v.trim() : "");
+const str = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
 
-async function lookup(provider) {
+async function lookup(provider: Provider): Promise<RunnerInfo> {
   const r = await fetch(provider.url, {
     headers: { accept: "application/json" },
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   const raw = provider.parse(await r.json());
-  if (!net.isIP(raw.ip)) throw new Error("no valid IP in response");
+  const ip = str(raw.ip);
+  if (!net.isIP(ip)) throw new Error("no valid IP in response");
 
   const countryCode = str(raw.countryCode).toUpperCase();
-  const loc = /^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/.test(str(raw.loc)) ? str(raw.loc) : "";
+  const loc = /^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/.test(str(raw.loc))
+    ? str(raw.loc)
+    : "";
   return {
-    ip: raw.ip,
+    ip,
     city: str(raw.city),
     region: str(raw.region),
     country: countryName(countryCode) || countryCode,
@@ -87,23 +108,23 @@ async function lookup(provider) {
   };
 }
 
-let cached = null;
+let cached: RunnerInfo | null = null;
 let cachedAt = 0;
-let inflight = null;
+let inflight: Promise<RunnerInfo> | null = null;
 
 // Returns the cached result unless it is older than 10 minutes or `refresh` is set.
-export function getRunnerInfo({ refresh = false } = {}) {
+export function getRunnerInfo({ refresh = false } = {}): Promise<RunnerInfo> {
   if (!refresh && cached && Date.now() - cachedAt < CACHE_MS)
     return Promise.resolve(cached);
   inflight ??= (async () => {
-    const errors = [];
+    const errors: string[] = [];
     for (const p of PROVIDERS) {
       try {
         cached = await lookup(p);
         cachedAt = Date.now();
         return cached;
       } catch (e) {
-        errors.push(`${p.name}: ${e.message}`);
+        errors.push(`${p.name}: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
     // Keep showing the last known value if every provider is down.

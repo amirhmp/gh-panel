@@ -1,0 +1,36 @@
+/* Design tokens: colors, shadow and radius, with a dark theme. */
+:root {
+  color-scheme: light dark;
+  --bg: #f4f5f7;
+  --card: #ffffff;
+  --text: #1b1f24;
+  --muted: #667085;
+  --border: #e4e7ec;
+  --code-bg: #f2f4f7;
+  --accent: #2563eb;
+  --ok: #16a34a;
+  --ok-bg: #dcfce7;
+  --off: #dc2626;
+  --off-bg: #fee2e2;
+  --danger: #dc2626;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.08);
+  --radius: 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116;
+    --card: #171b22;
+    --text: #e7e9ee;
+    --muted: #98a2b3;
+    --border: #272c35;
+    --code-bg: #1f242d;
+    --accent: #6ea8fe;
+    --ok: #4ade80;
+    --ok-bg: rgba(74, 222, 128, 0.14);
+    --off: #f87171;
+    --off-bg: rgba(248, 113, 113, 0.14);
+    --danger: #f87171;
+    --shadow: none;
+  }
+}

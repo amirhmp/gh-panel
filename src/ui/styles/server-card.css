@@ -1,0 +1,130 @@
+/* The Server card: key/value facts, traffic table and the shutdown zone. */
+.server-card {
+  margin-bottom: 1.75rem;
+}
+
+.server-card .head h2 {
+  text-transform: none;
+}
+
+/* Key/value list. Each .row is a <div> wrapping a <dt>/<dd> pair. */
+.kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.35rem 1rem;
+  margin: 0.75rem 0 0;
+  font-size: 0.92rem;
+}
+
+.kv .row {
+  display: contents;
+}
+
+.kv dt {
+  color: var(--muted);
+}
+
+.kv dd {
+  margin: 0;
+  min-width: 0;
+  word-break: break-word;
+  font-variant-numeric: tabular-nums;
+}
+
+.kv code {
+  margin: 0;
+  user-select: all; /* one click selects the whole IP for copying */
+}
+
+.kv a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.kv a:hover {
+  text-decoration: underline;
+}
+
+/* Traffic per network interface. */
+.traffic-wrap {
+  margin-top: 1rem;
+  overflow-x: auto;
+}
+
+.traffic {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.traffic caption {
+  text-align: left;
+  color: var(--muted);
+  padding-bottom: 0.4rem;
+}
+
+.traffic th,
+.traffic td {
+  padding: 0.4rem 0.6rem;
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+
+.traffic th:first-child,
+.traffic td:first-child {
+  text-align: left;
+}
+
+.traffic th {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+/* The internet-facing interface (eth0) is highlighted. */
+.traffic tr.main td {
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  font-weight: 600;
+}
+
+.traffic tr.main td:first-child {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.traffic .badge-inet {
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--card);
+  font-size: 0.7rem;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+
+.traffic tfoot td {
+  font-weight: 700;
+  border-top: 2px solid var(--border);
+  border-bottom: 0;
+}
+
+/* Shutdown button area at the bottom of the card. */
+.danger-zone {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px dashed var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.danger-zone p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  flex: 1;
+  min-width: 14rem;
+}
