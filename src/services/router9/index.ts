@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { SECRET_ENV_VARS, type Config } from "../../config";
+import { errorMessage } from "../../lib/errors";
 import { canConnect, run, sleep } from "../../lib/exec";
 import type { ServiceStatus } from "../../shared/types";
 import { bindAddress } from "../network";
@@ -21,27 +22,39 @@ import {
 const PORT = 20128;
 const DATA_DIR = path.join(os.tmpdir(), "panel-9router");
 const DB_FILE = path.join(DATA_DIR, "db", "data.sqlite");
+const INSTALL_TIMEOUT_MS = 10 * 60_000;
 
 const fileStamp = () =>
   new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 
-async function serverFile(): Promise<{ dir: string; file: string }> {
-  let root = "";
-  try {
-    root = (await run("npm", ["root", "-g"])).stdout.trim();
-  } catch {}
+// `npm root -g` spawns npm and never changes, so ask once (a failure is retried).
+let globalRoot = "";
+async function npmGlobalRoot(): Promise<string> {
+  if (!globalRoot) {
+    try {
+      globalRoot = (await run("npm", ["root", "-g"])).stdout.trim();
+    } catch {}
+  }
+  return globalRoot;
+}
+
+/** The bundled server of the globally installed 9router, or null if it is not installed. */
+async function findServer(): Promise<{ dir: string; file: string } | null> {
+  const root = await npmGlobalRoot();
+  if (!root) return null;
   const dir = path.join(root, "9router", "app");
   for (const f of ["custom-server.js", "server.js"]) {
-    if (root && fs.existsSync(path.join(dir, f)))
+    if (fs.existsSync(path.join(dir, f)))
       return { dir, file: path.join(dir, f) };
   }
-  throw new Error("9router is not installed (npm install -g 9router)");
+  return null;
 }
 
 /**
  * AI gateway (dashboard + OpenAI-compatible API) on the Tailscale IP, port 20128.
- * Off by default (no `autostart`): enable it from the panel. The dashboard
- * password is PANEL_PASSWORD. Config can be exported/imported from the panel.
+ * Not installed and off by default (no `autostart`): install, then start it
+ * from the panel. The dashboard password is PANEL_PASSWORD. Config can be
+ * exported/imported from the panel.
  */
 export class Router9Service implements Service {
   readonly #config: Config;
@@ -62,10 +75,49 @@ export class Router9Service implements Service {
     return { running: on, info: on ? this.#url || "starting..." : "" };
   }
 
+  async isInstalled(): Promise<boolean> {
+    return (await findServer()) !== null;
+  }
+
+  // Latest release, like the workflow used to do. --ignore-scripts skips its
+  // postinstall (it only pre-fetches optional SQLite engines; the panel runs
+  // 9router on Node's built-in node:sqlite instead).
+  async install(): Promise<void> {
+    if (await this.isInstalled()) return;
+    const env = { ...process.env };
+    for (const k of SECRET_ENV_VARS) delete env[k];
+    try {
+      await run(
+        "npm",
+        [
+          "install",
+          "-g",
+          "9router@latest",
+          "--ignore-scripts",
+          "--no-audit",
+          "--no-fund",
+        ],
+        { env, timeout: INSTALL_TIMEOUT_MS },
+      );
+    } catch (e) {
+      const stderr = String((e as { stderr?: unknown }).stderr ?? "");
+      const line = stderr
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l && !l.includes("A complete log"))
+        .pop();
+      throw new Error(`npm install failed: ${line || errorMessage(e)}`);
+    }
+    if (!(await this.isInstalled()))
+      throw new Error("npm install finished but 9router was not found");
+  }
+
   async start(): Promise<void> {
     if (this.#running()) return;
+    const server = await findServer();
+    if (!server)
+      throw new Error("9router is not installed: press install first");
     const host = await bindAddress(this.#config);
-    const server = await serverFile();
     fs.mkdirSync(DATA_DIR, { recursive: true });
 
     const env = { ...process.env };

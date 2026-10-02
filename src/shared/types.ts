@@ -12,6 +12,12 @@ export interface ServiceView extends ServiceStatus {
   controllable: boolean;
   /** true: has Export/Import config buttons. */
   configurable: boolean;
+  /** true: the service is installed from the panel, on demand. */
+  installable: boolean;
+  /** false: not installed yet (only the install button is shown). Always true when not installable. */
+  installed: boolean;
+  /** An install is running right now. */
+  installing: boolean;
 }
 
 export type ServicesResponse = Record<string, ServiceView>;

@@ -5,6 +5,7 @@ import {
   exportServiceConfig,
   getServices,
   importServiceConfig,
+  installService,
 } from "../api";
 import { downloadBlob } from "../download";
 import { usePoll } from "../hooks";
@@ -53,6 +54,16 @@ export const ServicesSection: FC<Props> = ({ active }) => {
     withBusy(name, async () => {
       try {
         await controlService(name, action);
+      } catch (e) {
+        toastError(e);
+      }
+    });
+
+  const onInstall = (name: string) =>
+    withBusy(name, async () => {
+      try {
+        await installService(name);
+        toast(`${name} installed`, "info");
       } catch (e) {
         toastError(e);
       }
@@ -115,6 +126,7 @@ export const ServicesSection: FC<Props> = ({ active }) => {
             service={service}
             disabled={busy.includes(ALL) || busy.includes(name)}
             onAction={(action) => void onAction(name, action)}
+            onInstall={() => void onInstall(name)}
             onExport={() => void onExport(name)}
             onImport={() => onImportClick(name)}
           />

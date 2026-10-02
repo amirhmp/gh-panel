@@ -2,18 +2,18 @@
 
 A TypeScript [Hono](https://hono.dev) control panel running on a GitHub Actions Ubuntu runner. It manages services:
 
-| Service     | What it does                                                                                                                                                                                 |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tailscale` | Joins your tailnet so you can reach the runner (status only, not controllable from the panel)                                                                                                |
-| `ssh`       | OpenSSH server on port **22**, bound to the Tailscale IP only; log in with the panel username/password. **Off by default**: enable it from the panel                                         |
-| `proxy`     | HTTP/HTTPS proxy (npm [`proxy`](https://github.com/TooTallNate/proxy-agents/tree/main/packages/proxy)) on port **3128**, bound to the Tailscale IP only                                      |
-| `9router`   | [9router](https://github.com/decolua/9router) AI gateway (dashboard + OpenAI-compatible API) on port **20128**, bound to the Tailscale IP only. **Off by default**: enable it from the panel |
+| Service     | What it does                                                                                                                                                                                                                   |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `tailscale` | Joins your tailnet so you can reach the runner (status only, not controllable from the panel)                                                                                                                                  |
+| `ssh`       | OpenSSH server on port **22**, bound to the Tailscale IP only; log in with the panel username/password. **Not installed and off by default**: install it, then start it from the panel                                         |
+| `proxy`     | HTTP/HTTPS proxy (npm [`proxy`](https://github.com/TooTallNate/proxy-agents/tree/main/packages/proxy)) on port **3128**, bound to the Tailscale IP only                                                                        |
+| `9router`   | [9router](https://github.com/decolua/9router) AI gateway (dashboard + OpenAI-compatible API) on port **20128**, bound to the Tailscale IP only. **Not installed and off by default**: install it, then start it from the panel |
 
-Tailscale starts first, then the panel (port **3000**), then `proxy`. `ssh` and `9router` stay off until you start them from the panel. The panel, `ssh`, `proxy` and `9router` listen on the **Tailscale IP only**, so nothing is reachable from outside your tailnet. If Tailscale fails to come up, the panel exits and the workflow fails instead of exposing anything.
+Tailscale starts first, then the panel (port **3000**), then `proxy`. `ssh` and `9router` are not installed by the workflow: press **install** on their cards (the panel runs `apt-get install openssh-server` / `npm install -g 9router@latest`), then **start**. The panel, `ssh`, `proxy` and `9router` listen on the **Tailscale IP only**, so nothing is reachable from outside your tailnet. If Tailscale fails to come up, the panel exits and the workflow fails instead of exposing anything.
 
 The top of the panel is a single **Server** card with: the runner's public IP and approximate location (city, region, country, map link) and provider, the server time and timezone, a live **uptime** timer (how long the VM has been on) with its boot time, a table of the **network traffic since boot per interface** (received / sent / total; `eth0` is listed first and highlighted, with a total row), and the **Shut down & end workflow** button. The IP is looked up by the server, so it is the runner's IP (the one the proxy exits from), not your own; the location is the data center's, not a precise address. Traffic comes from the kernel counters in `/proc/net/dev`, so it includes the runner's own setup downloads (apt, npm, Tailscale). The total row sums all listed interfaces, so traffic that crosses a virtual interface (e.g. `tailscale0`) and `eth0` is counted in both; the `eth0` row is the real internet traffic. The IP is also printed in the job log as `[runner] public IP: ...`.
 
-Once running, use the panel to start/stop/restart `ssh`, `proxy` and `9router`. The **Shut down** button (in the Server card) stops them and ends the workflow.
+Once running, use the panel to install `ssh` and `9router` (one **install** button per card; start, stop, restart and config buttons appear once installed) and to start/stop/restart `ssh`, `proxy` and `9router`. The **Shut down** button (in the Server card) stops them and ends the workflow.
 
 ## GitHub secrets (Settings → Secrets and variables → Actions)
 
@@ -33,11 +33,11 @@ No extra secrets are needed for 9router: its dashboard password is `PANEL_PASSWO
 3. From a device on your tailnet:
    - Panel: `http://100.x.y.z:3000` (log in with `PANEL_USERNAME` / `PANEL_PASSWORD`)
    - Proxy: `curl -x http://proxyuser:S3cret-Proxy-Pass@100.x.y.z:3128 https://ifconfig.me`
-   - SSH (press **start** on the `ssh` card first): `ssh admin@100.x.y.z` (password = `PANEL_PASSWORD`; the user is in the `sudo` group and `sudo` asks for the same password)
+   - SSH (press **install**, then **start**, on the `ssh` card first): `ssh admin@100.x.y.z` (password = `PANEL_PASSWORD`; the user is in the `sudo` group and `sudo` asks for the same password)
 
 ## 9router
 
-9router is installed by the workflow (`npm install -g 9router@latest`, so always the latest release) but **not started**. Press **start** on its card in the panel, then open `http://100.x.y.z:20128/dashboard` (log in with `PANEL_PASSWORD`) to add provider API keys, combos and client API keys. Point your tools at `http://100.x.y.z:20128/v1`; `/v1` requires an API key created in the dashboard.
+9router is not part of the workflow: press **install** on its card in the panel (it runs `npm install -g 9router@latest`, so always the latest release), then **start**. Once it is running, then open `http://100.x.y.z:20128/dashboard` (log in with `PANEL_PASSWORD`) to add provider API keys, combos and client API keys. Point your tools at `http://100.x.y.z:20128/v1`; `/v1` requires an API key created in the dashboard.
 
 The runner is ephemeral, so its configuration disappears when the workflow ends. Use the card's buttons to keep it:
 
@@ -51,7 +51,8 @@ Export works while 9router is running, but only once it has been started at leas
 - `GET  /api/services`
 - `GET  /api/system` — server time, timezone, uptime and network traffic since boot
 - `GET  /api/runner` — the runner's public IP and approximate location (`?refresh=1` forces a new lookup)
-- `POST /api/services/:name/(start|stop|restart)` — the proxy also accepts `?port=8080`; `tailscale` returns 403
+- `POST /api/services/:name/install` — installs `ssh` (apt) or `9router` (npm) on demand and answers when done; 404 for services that need no install
+- `POST /api/services/:name/(start|stop|restart)` — the proxy also accepts `?port=8080`; `tailscale` returns 403; a service that is not installed yet returns 409
 - `GET  /api/services/9router/config` — download the encrypted 9router config
 - `POST /api/services/9router/config` — upload one (`Content-Type: application/octet-stream`, max 25 MB)
 - `POST /api/shutdown` — stops the services and exits, which ends the workflow run
@@ -253,7 +254,7 @@ scripts/
 
 ## Adding a service
 
-1. Create `src/services/<name>.ts` with a class implementing `Service` (`src/services/types.ts`): `status()`, `start()`, `stop()`, and optionally `autostart`, `controllable: false` (hides the panel buttons), or `exportConfig()` / `importConfig(buffer)` (adds Export/Import buttons).
+1. Create `src/services/<name>.ts` with a class implementing `Service` (`src/services/types.ts`): `status()`, `start()`, `stop()`, and optionally `autostart`, `controllable: false` (hides the panel buttons), `exportConfig()` / `importConfig(buffer)` (adds Export/Import buttons), or `isInstalled()` / `install()` (the card shows only an install button until installed).
 2. Register an instance in `createServices()` in `src/services/index.ts`.
 
 The API, the panel and the startup/shutdown logic pick it up from the registry; no other file changes.

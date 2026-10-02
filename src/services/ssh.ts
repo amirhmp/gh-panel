@@ -9,12 +9,20 @@ import { tailscaleIp } from "./network";
 import type { Service } from "./types";
 
 const USERNAME_RE = /^[a-z_][a-z0-9_-]{0,31}$/;
+const SSHD_BIN = "/usr/sbin/sshd";
 const SSHD_CONFIG = path.join(os.tmpdir(), "panel-sshd_config");
+
+// The panel runs its own sshd on the Tailscale IP, so the packaged one (which
+// listens on every interface) must stay off, or port 22 is taken.
+async function disableSystemSshd(): Promise<void> {
+  for (const unit of ["ssh.socket", "ssh.service"])
+    await exec("sudo", ["systemctl", "disable", "--now", unit]).catch(() => {});
+}
 
 /**
  * OpenSSH server that logs in with the panel username/password. Listens on the
- * Tailscale IP only, so it is not reachable from the internet. Off by default
- * (no `autostart`): enable it from the panel.
+ * Tailscale IP only, so it is not reachable from the internet. Not installed
+ * and off by default (no `autostart`): install, then start it from the panel.
  */
 export class SshService implements Service {
   readonly #config: Config;
@@ -34,10 +42,35 @@ export class SshService implements Service {
     return { running: on, info: on ? this.#info : "" };
   }
 
+  async isInstalled(): Promise<boolean> {
+    return fs.existsSync(SSHD_BIN);
+  }
+
+  async install(): Promise<void> {
+    if (this.#config.bindAddress)
+      throw new Error("ssh is disabled in local mode (BIND_ADDRESS is set)");
+    if (await this.isInstalled()) return;
+    // RUNLEVEL=1 makes the package scripts skip starting the packaged sshd.
+    const apt = [
+      "env",
+      "RUNLEVEL=1",
+      "DEBIAN_FRONTEND=noninteractive",
+      "apt-get",
+      "-o",
+      "DPkg::Lock::Timeout=120", // a fresh runner may still be running apt itself
+      "-qq",
+    ];
+    await exec("sudo", [...apt, "update"]);
+    await exec("sudo", [...apt, "install", "-y", "openssh-server"]);
+    await disableSystemSshd();
+  }
+
   async start(): Promise<void> {
     if (this.#running()) return;
     if (this.#config.bindAddress)
       throw new Error("ssh is disabled in local mode (BIND_ADDRESS is set)");
+    if (!(await this.isInstalled()))
+      throw new Error("ssh is not installed: press install first");
     const { panelUsername: user, panelPassword: pass } = this.#config;
     if (!USERNAME_RE.test(user))
       throw new Error(
@@ -70,6 +103,7 @@ export class SshService implements Service {
       ]);
     await exec("sudo", ["chpasswd"], `${user}:${pass}\n`);
 
+    await disableSystemSshd();
     await exec("sudo", ["ssh-keygen", "-A"]); // create host keys if missing
     await exec("sudo", ["mkdir", "-p", "/run/sshd"]);
     fs.writeFileSync(
@@ -92,16 +126,10 @@ export class SshService implements Service {
         "",
       ].join("\n"),
     );
-    await exec("sudo", ["/usr/sbin/sshd", "-t", "-f", SSHD_CONFIG]);
+    await exec("sudo", [SSHD_BIN, "-t", "-f", SSHD_CONFIG]);
 
     let stderr = "";
-    const sshd = spawn("sudo", [
-      "/usr/sbin/sshd",
-      "-D",
-      "-e",
-      "-f",
-      SSHD_CONFIG,
-    ]);
+    const sshd = spawn("sudo", [SSHD_BIN, "-D", "-e", "-f", SSHD_CONFIG]);
     this.#sshd = sshd;
     sshd.stderr.on("data", (d) => (stderr += String(d)));
     for (let i = 0; i < 20; i++) {

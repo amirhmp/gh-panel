@@ -46,6 +46,12 @@ export async function controlService(
   });
 }
 
+export async function installService(name: string): Promise<void> {
+  await call(`/api/services/${seg(name)}/install`, "Install failed", {
+    method: "POST",
+  });
+}
+
 export async function exportServiceConfig(
   name: string,
 ): Promise<{ blob: Blob; filename: string }> {

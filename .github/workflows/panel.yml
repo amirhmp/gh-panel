@@ -17,14 +17,6 @@ jobs:
       - name: Install Tailscale
         run: curl -fsSL https://tailscale.com/install.sh | sh
 
-      - name: Install OpenSSH server
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq openssh-server
-          # The panel runs its own sshd, bound to the Tailscale IP only
-          sudo systemctl disable --now ssh.socket || true
-          sudo systemctl disable --now ssh.service || true
-
       # The panel is TypeScript: build it (dist/), then drop the dev toolchain.
       - name: Install dependencies
         run: npm ci
@@ -35,13 +27,9 @@ jobs:
       - name: Remove dev dependencies
         run: npm prune --omit=dev
 
-      # Installed but not started: the panel enables it on demand (off by default).
-      # --ignore-scripts skips its postinstall (it only pre-fetches optional SQLite
-      # engines; the panel runs it on Node's built-in node:sqlite instead).
-      - name: Install 9router
-        run: npm install -g 9router@latest --ignore-scripts
-
-      - name: Run panel (starts Tailscale + proxy automatically; SSH and 9router stay off until enabled)
+      # OpenSSH server and 9router are not installed here: the panel installs
+      # them on demand (install button on their cards), then starts them.
+      - name: Run panel (starts Tailscale + proxy automatically; SSH and 9router are installed and started from the panel)
         env:
           PANEL_USERNAME: ${{ secrets.PANEL_USERNAME }}
           PANEL_PASSWORD: ${{ secrets.PANEL_PASSWORD }}
