@@ -1,7 +1,7 @@
 import type { Config } from "./config";
 import { errorMessage } from "./lib/errors";
 import type { Services } from "./services";
-import { bindAddress } from "./services/network";
+import { bindAddress, tailscaleIp } from "./services/network";
 import { isControllable, type Service } from "./services/types";
 import { getRunnerInfo } from "./system/runner";
 
@@ -16,10 +16,8 @@ export async function bringUpNetwork(
 ): Promise<string> {
   if (!config.bindAddress) {
     await services.tailscale.start();
-    console.log(
-      "[tailscale] started:",
-      (await services.tailscale.status()).info,
-    );
+    const { info } = await services.tailscale.status();
+    console.log(`[tailscale] started: ${info} (${await tailscaleIp()})`);
   }
   return bindAddress(config);
 }

@@ -6,6 +6,7 @@ import {
   getServices,
   importServiceConfig,
   installService,
+  setServiceToggle,
 } from "../api";
 import { downloadBlob } from "../download";
 import { usePoll } from "../hooks";
@@ -69,6 +70,15 @@ export const ServicesSection: FC<Props> = ({ active }) => {
       }
     });
 
+  const onToggle = (name: string, key: string, enabled: boolean) =>
+    withBusy(name, async () => {
+      try {
+        await setServiceToggle(name, key, enabled);
+      } catch (e) {
+        toastError(e);
+      }
+    });
+
   const onExport = (name: string) =>
     withBusy(name, async () => {
       try {
@@ -127,6 +137,7 @@ export const ServicesSection: FC<Props> = ({ active }) => {
             disabled={busy.includes(ALL) || busy.includes(name)}
             onAction={(action) => void onAction(name, action)}
             onInstall={() => void onInstall(name)}
+            onToggle={(key, enabled) => void onToggle(name, key, enabled)}
             onExport={() => void onExport(name)}
             onImport={() => onImportClick(name)}
           />

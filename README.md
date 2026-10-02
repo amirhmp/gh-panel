@@ -2,12 +2,12 @@
 
 A TypeScript [Hono](https://hono.dev) control panel running on a GitHub Actions Ubuntu runner. It manages services:
 
-| Service     | What it does                                                                                                                                                                                                                   |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `tailscale` | Joins your tailnet so you can reach the runner (status only, not controllable from the panel)                                                                                                                                  |
-| `ssh`       | OpenSSH server on port **22**, bound to the Tailscale IP only; log in with the panel username/password. **Not installed and off by default**: install it, then start it from the panel                                         |
-| `proxy`     | HTTP/HTTPS proxy (npm [`proxy`](https://github.com/TooTallNate/proxy-agents/tree/main/packages/proxy)) on port **3128**, bound to the Tailscale IP only                                                                        |
-| `9router`   | [9router](https://github.com/decolua/9router) AI gateway (dashboard + OpenAI-compatible API) on port **20128**, bound to the Tailscale IP only. **Not installed and off by default**: install it, then start it from the panel |
+| Service     | What it does                                                                                                                                                                                                                      |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tailscale` | Joins your tailnet so you can reach the runner. Its card shows the runner's name and IP, whether traffic to your devices is **direct or relayed** (DERP), and an **exit node** switch (start/stop are not available in the panel) |
+| `ssh`       | OpenSSH server on port **22**, bound to the Tailscale IP only; log in with the panel username/password. **Not installed and off by default**: install it, then start it from the panel                                            |
+| `proxy`     | HTTP/HTTPS proxy (npm [`proxy`](https://github.com/TooTallNate/proxy-agents/tree/main/packages/proxy)) on port **3128**, bound to the Tailscale IP only                                                                           |
+| `9router`   | [9router](https://github.com/decolua/9router) AI gateway (dashboard + OpenAI-compatible API) on port **20128**, bound to the Tailscale IP only. **Not installed and off by default**: install it, then start it from the panel    |
 
 Tailscale starts first, then the panel (port **3000**), then `proxy`. `ssh` and `9router` are not installed by the workflow: press **install** on their cards (the panel runs `apt-get install openssh-server` / `npm install -g 9router@latest`), then **start**. The panel, `ssh`, `proxy` and `9router` listen on the **Tailscale IP only**, so nothing is reachable from outside your tailnet. If Tailscale fails to come up, the panel exits and the workflow fails instead of exposing anything.
 
@@ -26,10 +26,12 @@ Once running, use the panel to install `ssh` and `9router` (one **install** butt
 
 No extra secrets are needed for 9router: its dashboard password is `PANEL_PASSWORD`.
 
+Optional **variable** (same page, **Variables** tab): `TAILSCALE_HOSTNAME`, the machine name of the runner in your tailnet. Default: `github-ubuntu` (letters, digits and `-`, max 63 characters). The panel shows the runner by its MagicDNS name (`<name>.<tailnet>.ts.net`) instead of its IP, e.g. `http://github-ubuntu.tail1234.ts.net:20128/dashboard` on the 9router card.
+
 ## Usage
 
 1. Add the secrets, then run **Actions → Ubuntu Panel → Run workflow**.
-2. Read the Tailscale IP from the job log (`[tailscale] started: 100.x.y.z`) or in your Tailscale admin console.
+2. Read the runner's name and Tailscale IP from the job log (`[tailscale] started: github-ubuntu.tail1234.ts.net (100.x.y.z)`) or in your Tailscale admin console.
 3. From a device on your tailnet:
    - Panel: `http://100.x.y.z:3000` (log in with `PANEL_USERNAME` / `PANEL_PASSWORD`)
    - Proxy: `curl -x http://proxyuser:S3cret-Proxy-Pass@100.x.y.z:3128 https://ifconfig.me`
@@ -51,6 +53,7 @@ Export works while 9router is running, but only once it has been started at leas
 - `GET  /api/services`
 - `GET  /api/system` — server time, timezone, uptime and network traffic since boot
 - `GET  /api/runner` — the runner's public IP and approximate location (`?refresh=1` forces a new lookup)
+- `PUT /api/services/:name/toggles/:key` with `{"enabled": true|false}` — switches an option listed in the service's `toggles` (tailscale: `exit-node`)
 - `POST /api/services/:name/install` — installs `ssh` (apt) or `9router` (npm) on demand and answers when done; 404 for services that need no install
 - `POST /api/services/:name/(start|stop|restart)` — the proxy also accepts `?port=8080`; `tailscale` returns 403; a service that is not installed yet returns 409
 - `GET  /api/services/9router/config` — download the encrypted 9router config
@@ -233,7 +236,7 @@ src/
   services/             one class per managed service
     types.ts              the Service interface
     index.ts              registry: add new services here
-    network.ts            tailscaleIp(), bindAddress()
+    network.ts            tailscaleStatus(), tailscaleIp(), bindAddress(), displayHost()
     tailscale.ts  ssh.ts  proxy.ts
     router9/              9router service + config export/import (AES-GCM, SQLite)
   system/               facts about the VM
@@ -254,7 +257,7 @@ scripts/
 
 ## Adding a service
 
-1. Create `src/services/<name>.ts` with a class implementing `Service` (`src/services/types.ts`): `status()`, `start()`, `stop()`, and optionally `autostart`, `controllable: false` (hides the panel buttons), `exportConfig()` / `importConfig(buffer)` (adds Export/Import buttons), or `isInstalled()` / `install()` (the card shows only an install button until installed).
+1. Create `src/services/<name>.ts` with a class implementing `Service` (`src/services/types.ts`): `status()`, `start()`, `stop()`, and optionally `autostart`, `controllable: false` (hides the panel buttons), `exportConfig()` / `importConfig(buffer)` (adds Export/Import buttons), `isInstalled()` / `install()` (the card shows only an install button until installed), or `setToggle()` (on/off options returned in `status().toggles`; `status().details` adds label/value rows to the card).
 2. Register an instance in `createServices()` in `src/services/index.ts`.
 
 The API, the panel and the startup/shutdown logic pick it up from the registry; no other file changes.
@@ -286,12 +289,13 @@ npm run dev              # open http://127.0.0.1:3000
 
 `.env` is gitignored and is loaded by `npm run dev` and `npm run start:local` only; on a runner the same variables come from repository secrets. Restart `npm run dev` after editing `.env`.
 
-| Variable                            | Local value    | Purpose                                                      |
-| ----------------------------------- | -------------- | ------------------------------------------------------------ |
-| `BIND_ADDRESS`                      | `127.0.0.1`    | Listen here instead of the Tailscale IP (enables local mode) |
-| `PANEL_PORT`                        | `3000`         | Panel port                                                   |
-| `PANEL_USERNAME` / `PANEL_PASSWORD` | any            | Panel login (also SSH and the 9router dashboard)             |
-| `PROXY_CREDENTIALS`                 | `proxy:secret` | `username:password` for the proxy on port 3128               |
-| `TAILSCALE_AUTHKEY`                 | not needed     | Only used on a real runner                                   |
+| Variable                            | Local value    | Purpose                                                        |
+| ----------------------------------- | -------------- | -------------------------------------------------------------- |
+| `BIND_ADDRESS`                      | `127.0.0.1`    | Listen here instead of the Tailscale IP (enables local mode)   |
+| `PANEL_PORT`                        | `3000`         | Panel port                                                     |
+| `PANEL_USERNAME` / `PANEL_PASSWORD` | any            | Panel login (also SSH and the 9router dashboard)               |
+| `PROXY_CREDENTIALS`                 | `proxy:secret` | `username:password` for the proxy on port 3128                 |
+| `TAILSCALE_AUTHKEY`                 | not needed     | Only used on a real runner                                     |
+| `TAILSCALE_HOSTNAME`                | not needed     | Optional machine name in the tailnet (default `github-ubuntu`) |
 
-Notes for local mode: the traffic table only appears on Linux (it reads `/proc/net/dev`; use WSL or Docker on Windows), the shutdown button really exits the server (restart `npm run dev`), and `9router` needs `npm install -g 9router` first.
+Notes for local mode: the traffic table only appears on Linux (it reads `/proc/net/dev`; use WSL or Docker on Windows), the shutdown button really exits the server (restart `npm run dev`), and the `tailscale` card shows "unavailable" (no Tailscale). `ssh` refuses to install, `9router` installs with its **install** button (`npm install -g`).

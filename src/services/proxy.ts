@@ -2,7 +2,7 @@ import http from "node:http";
 import { createProxy, type ProxyServer } from "proxy";
 import type { Config } from "../config";
 import type { ServiceStatus } from "../shared/types";
-import { bindAddress } from "./network";
+import { bindAddress, displayHost } from "./network";
 import type { Service, StartOptions } from "./types";
 
 /** HTTP/HTTPS proxy on the Tailscale IP (default port 3128), with basic auth. */
@@ -18,7 +18,10 @@ export class ProxyService implements Service {
   async status(): Promise<ServiceStatus> {
     const addr = this.#server?.listening ? this.#server.address() : null;
     return addr && typeof addr === "object"
-      ? { running: true, info: `${addr.address}:${addr.port}` }
+      ? {
+          running: true,
+          info: `${await displayHost(this.#config)}:${addr.port}`,
+        }
       : { running: false, info: "" };
   }
 

@@ -112,6 +112,25 @@ export function servicesRoutes(services: ServiceRegistry) {
     return c.json(await toView(name, s));
   });
 
+  // PUT /api/services/:name/toggles/:key  {"enabled": true|false}
+  // Switches an option that the service lists in `toggles` (e.g. tailscale's exit node).
+  app.put("/:name/toggles/:key", async (c) => {
+    const { name, key } = c.req.param();
+    const s = findService(services, name);
+    if (!s?.setToggle) throw new HttpError("not found", 404);
+    await requireInstalled(name, s);
+    const body = (await c.req.json().catch(() => null)) as {
+      enabled?: unknown;
+    } | null;
+    if (typeof body?.enabled !== "boolean")
+      throw new HttpError('body must be {"enabled": true|false}', 400);
+    const offered = (await s.status()).toggles ?? [];
+    if (!offered.some((t) => t.key === key))
+      throw new HttpError(`option ${key} is not available`, 404);
+    await s.setToggle(key, body.enabled);
+    return c.json(await toView(name, s));
+  });
+
   // POST /api/services/:name/(start|stop|restart)?port=1234
   app.post("/:name/:action", async (c) => {
     const { name, action } = c.req.param();

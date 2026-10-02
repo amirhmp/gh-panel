@@ -15,6 +15,8 @@ export const Layout: FC = () => (
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>GH Panel</title>
+        <link rel="icon" type="image/svg+xml" href="/assets/icon.svg" />
+        <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
         <link rel="stylesheet" href="/assets/styles.css" />
       </head>
       <body>

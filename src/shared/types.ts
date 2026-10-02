@@ -1,9 +1,26 @@
 // Contracts of the HTTP API. Imported by both the server and the browser UI,
 // so a change here is type-checked on both sides.
 
+/** An extra "label: value" row shown on a service card. */
+export interface ServiceDetail {
+  label: string;
+  value: string;
+}
+
+/** An on/off option of a service, switched from its card. */
+export interface ServiceToggle {
+  /** Stable id used in PUT /api/services/:name/toggles/:key. */
+  key: string;
+  label: string;
+  enabled: boolean;
+  hint?: string;
+}
+
 export interface ServiceStatus {
   running: boolean;
   info: string;
+  details?: ServiceDetail[];
+  toggles?: ServiceToggle[];
 }
 
 /** What GET /api/services returns for each service. */

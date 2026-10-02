@@ -34,5 +34,7 @@ jobs:
           PANEL_USERNAME: ${{ secrets.PANEL_USERNAME }}
           PANEL_PASSWORD: ${{ secrets.PANEL_PASSWORD }}
           TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+          # Optional repository variable; empty means the default (github-ubuntu)
+          TAILSCALE_HOSTNAME: ${{ vars.TAILSCALE_HOSTNAME }}
           PROXY_CREDENTIALS: ${{ secrets.PROXY_CREDENTIALS }}
         run: npm start

@@ -5,7 +5,7 @@ import path from "node:path";
 import type { Config } from "../config";
 import { canConnect, exec, sleep } from "../lib/exec";
 import type { ServiceStatus } from "../shared/types";
-import { tailscaleIp } from "./network";
+import { displayHost, tailscaleIp } from "./network";
 import type { Service } from "./types";
 
 const USERNAME_RE = /^[a-z_][a-z0-9_-]{0,31}$/;
@@ -136,7 +136,7 @@ export class SshService implements Service {
       if (!this.#running())
         throw new Error(`sshd exited: ${stderr.trim() || "unknown error"}`);
       if (await canConnect(ip, 22)) {
-        this.#info = `ssh ${user}@${ip}`;
+        this.#info = `ssh ${user}@${await displayHost(this.#config)}`;
         return;
       }
       await sleep(250);

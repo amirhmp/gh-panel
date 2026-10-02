@@ -2,11 +2,12 @@
 //   dist/server.js          the server, one ESM file (npm packages stay external)
 //   dist/public/app.js      the browser app (Hono JSX DOM runtime bundled in)
 //   dist/public/styles.css  src/ui/styles/index.css with its imports inlined
+//   dist/public/*           src/ui/assets/ copied as is (panel icon)
 //
 //   npm run build           everything
 //   npm run dev:ui          UI only (--ui), rebuilt on change (--watch)
 import { build, context, type BuildOptions } from "esbuild";
-import { rm } from "node:fs/promises";
+import { cp, rm } from "node:fs/promises";
 
 const args = new Set(process.argv.slice(2));
 const watch = args.has("--watch");
@@ -50,6 +51,8 @@ const styles: BuildOptions = {
 const targets = uiOnly ? [client, styles] : [server, client, styles];
 
 await rm(uiOnly ? "dist/public" : "dist", { recursive: true, force: true });
+
+await cp("src/ui/assets", "dist/public", { recursive: true });
 
 if (watch) {
   const contexts = await Promise.all(targets.map((t) => context(t)));

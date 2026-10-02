@@ -7,7 +7,7 @@ import { SECRET_ENV_VARS, type Config } from "../../config";
 import { errorMessage } from "../../lib/errors";
 import { canConnect, run, sleep } from "../../lib/exec";
 import type { ServiceStatus } from "../../shared/types";
-import { bindAddress } from "../network";
+import { bindAddress, displayHost } from "../network";
 import type { ExportedConfig, Service } from "../types";
 import {
   ConfigError,
@@ -156,7 +156,7 @@ export class Router9Service implements Service {
           `9router exited: ${tail.trim().split("\n").pop() || "unknown error"}`,
         );
       if (await canConnect(host, PORT)) {
-        this.#url = `http://${host}:${PORT}/dashboard`;
+        this.#url = `http://${await displayHost(this.#config)}:${PORT}/dashboard`;
         return;
       }
       await sleep(500);

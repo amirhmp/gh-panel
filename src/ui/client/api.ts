@@ -52,6 +52,22 @@ export async function installService(name: string): Promise<void> {
   });
 }
 
+export async function setServiceToggle(
+  name: string,
+  key: string,
+  enabled: boolean,
+): Promise<void> {
+  await call(
+    `/api/services/${seg(name)}/toggles/${seg(key)}`,
+    "Change failed",
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    },
+  );
+}
+
 export async function exportServiceConfig(
   name: string,
 ): Promise<{ blob: Blob; filename: string }> {

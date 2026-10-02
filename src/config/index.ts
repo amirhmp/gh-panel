@@ -10,9 +10,15 @@ export interface Config {
   /** Local-dev override for the Tailscale IP (e.g. 127.0.0.1). */
   bindAddress: string | undefined;
   tailscaleAuthKey: string | undefined;
+  /** Name this runner gets in the tailnet (TAILSCALE_HOSTNAME, default "github-ubuntu"). */
+  tailscaleHostname: string;
   /** "username:password" for the HTTP proxy. */
   proxyCredentials: string | undefined;
 }
+
+const DEFAULT_TAILSCALE_HOSTNAME = "github-ubuntu";
+// A DNS label: Tailscale uses it as the machine name (MagicDNS).
+const HOSTNAME_RE = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/i;
 
 export function loadConfig(env?: NodeJS.ProcessEnv): Config {
   const result = loadDotenv({ quiet: true });
@@ -30,12 +36,20 @@ export function loadConfig(env?: NodeJS.ProcessEnv): Config {
       `PANEL_PORT is not a valid port: ${environment.PANEL_PORT}`,
     );
 
+  const tailscaleHostname =
+    environment.TAILSCALE_HOSTNAME?.trim() || DEFAULT_TAILSCALE_HOSTNAME;
+  if (!HOSTNAME_RE.test(tailscaleHostname))
+    throw new Error(
+      `TAILSCALE_HOSTNAME is not a valid host name (letters, digits and -, max 63 characters): ${tailscaleHostname}`,
+    );
+
   return {
     panelUsername: PANEL_USERNAME,
     panelPassword: PANEL_PASSWORD,
     panelPort,
     bindAddress: environment.BIND_ADDRESS || undefined,
     tailscaleAuthKey: environment.TAILSCALE_AUTHKEY || undefined,
+    tailscaleHostname,
     proxyCredentials: environment.PROXY_CREDENTIALS || undefined,
   };
 }

@@ -13,6 +13,7 @@ interface Props {
   disabled: boolean;
   onAction: (action: ServiceAction) => void;
   onInstall: () => void;
+  onToggle: (key: string, enabled: boolean) => void;
   onExport: () => void;
   onImport: () => void;
 }
@@ -32,6 +33,7 @@ export const ServiceCard: FC<Props> = ({
   disabled,
   onAction,
   onInstall,
+  onToggle,
   onExport,
   onImport,
 }) => (
@@ -55,6 +57,35 @@ export const ServiceCard: FC<Props> = ({
         )}
       </code>
     ) : null}
+
+    {service.details?.length ? (
+      <dl class="details">
+        {service.details.map((d, i) => (
+          <div key={`${i}-${d.label}`}>
+            <dt>{d.label}</dt>
+            <dd>{d.value}</dd>
+          </div>
+        ))}
+      </dl>
+    ) : null}
+
+    {service.toggles?.map((t) => (
+      <div key={t.key}>
+        <div class="toggle">
+          <span class="label">{t.label}</span>
+          <span class={t.enabled ? "badge on" : "badge"}>
+            {t.enabled ? "on" : "off"}
+          </span>
+          <button
+            disabled={disabled}
+            onClick={() => onToggle(t.key, !t.enabled)}
+          >
+            {t.enabled ? "disable" : "enable"}
+          </button>
+        </div>
+        {t.hint ? <p class="note">{t.hint}</p> : null}
+      </div>
+    ))}
 
     {!service.installed ? (
       <>

@@ -29,6 +29,13 @@ export interface Service {
   importConfig?(blob: Buffer): Promise<void>;
 
   /**
+   * Optional: switches one of the `toggles` that `status()` returns (adds the
+   * on/off buttons and PUT /api/services/:name/toggles/:key). Works even when
+   * `controllable` is false.
+   */
+  setToggle?(key: string, enabled: boolean): Promise<void>;
+
+  /**
    * Optional pair: the service is not installed by the workflow but from the
    * panel (POST /api/services/:name/install). Until `isInstalled()` is true the
    * card only shows an install button and the API refuses start/restart/config.
