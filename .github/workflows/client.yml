@@ -1,0 +1,49 @@
+name: Build desktop client
+
+# Builds the Tauri client (apps/client/) for Windows, macOS and Linux.
+# Run it by hand; the installers are attached to the run as artifacts.
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            args: ""
+          - os: windows-latest
+            args: ""
+          - os: macos-latest
+            args: "--target universal-apple-darwin"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/client/src-tauri
+
+      - name: Linux system libraries
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libdbus-1-dev
+
+      - name: Install frontend dependencies
+        run: npm ci --workspace=@gh-panel/client
+
+      - uses: tauri-apps/tauri-action@v0
+        with:
+          projectPath: apps/client
+          args: ${{ matrix.args }}
+          uploadWorkflowArtifacts: true

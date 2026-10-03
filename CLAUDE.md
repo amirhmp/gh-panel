@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+**Monorepo (npm workspaces).** `apps/panel` = the server + browser UI described below (all `src/...` and `scripts/...` paths in this file are relative to `apps/panel/` unless they start with `apps/` or `packages/`), `apps/client` = Tauri desktop client, `packages/shared` = `@gh-panel/shared` (API types, `DEFAULT_PORTS`, `EXIT_NODE_TOGGLE`, `API` route paths; plain TS source, no build step). Run everything from the repo root: `npm install`, `npm run dev`, `npm run build`, `npm run typecheck`, `npm run client`. The workflow installs only the panel (`npm ci --workspace=@gh-panel/panel`). `apps/panel/scripts/build.ts` keeps npm dependencies external but must bundle `@gh-panel/*` (they are TS sources): it builds the `external` list from `package.json` dependencies minus `@gh-panel/*`. Anything the panel and the client must agree on (ports, paths, response shapes, toggle keys) goes in `packages/shared`, never duplicated. `.env` lives in `apps/panel/.env`.
+
 Project memory for GH Panel: a small TypeScript Hono control panel that runs on a GitHub Actions Ubuntu runner and manages services (Tailscale, SSH, HTTP proxy, SOCKS5 proxy, 9router). See `README.md` for user-facing setup and secrets, and for the architecture diagrams (keep them in sync when the structure changes).
 
 ## Layout
@@ -11,7 +13,7 @@ Project memory for GH Panel: a small TypeScript Hono control panel that runs on 
 - `src/routes/`: HTTP layer, no business logic. `services.ts` (`/api/services`), `server.ts` (`/api/system`, `/api/runner`, `/api/shutdown`), `pages.tsx` (`GET /`). Errors are thrown as `HttpError(message, status)`.
 - `src/services/`: one class per service implementing `Service` (`types.ts`): `tailscale.ts`, `ssh.ts`, `proxy.ts`, `socks.ts`, `router9/` (service + `config.ts` for export/import). `index.ts` is the registry (`createServices`, `findService`); `network.ts` has `tailscaleStatus()` (cached 3 s, shared by all services), `tailscaleIp()`, `bindAddress(config)` and `displayHost(config)`.
 - `src/system/`: `info.ts` (`getSystemInfo()`: server time, timezone, `os.uptime()`, per-interface traffic from `/proc/net/dev`), `runner.ts` (`getRunnerInfo({ refresh })`: public IP + geolocation via ipinfo.io, then ipwho.is, then ipify.org for IP only; cached 10 min; concurrent calls deduped).
-- `src/shared/types.ts`: the API contracts (`ServiceView`, `RunnerInfo`, `SystemInfo`, `Traffic`, `SERVICE_ACTIONS`, ...). The only module both the server and the browser import.
+- `packages/shared/src` (`@gh-panel/shared`): the API contracts (`types.ts`: `ServiceView`, `RunnerInfo`, `SystemInfo`, `Traffic`, `SERVICE_ACTIONS`, ...), `constants.ts` (default ports, exit-node key) and `paths.ts` (`API` route builders). The only workspace code both the server, the browser UI and the desktop client import.
 - `src/lib/`: `exec.ts` (`run`, `exec`, `canConnect`, `sleep`), `errors.ts` (`HttpError`, `errorMessage`).
 - `src/ui/Layout.tsx`: server-rendered HTML shell (`hono/jsx`): `<link>` to `/assets/styles.css`, `<script type="module">` for `/assets/app.js`.
 - `src/ui/client/`: the browser app, client-rendered with `hono/jsx/dom` (own `tsconfig.json`). `App.tsx`, `components/` (`ServerCard`, `TrafficTable`, `ShutdownZone`, `ServicesSection`, `ServiceCard`, `Toast`), `api.ts` (typed fetch wrappers), `hooks.ts` (`usePoll`, `useClock`), `format.ts` (pure helpers), `toast.ts` (tiny store), `download.ts`.
@@ -34,7 +36,7 @@ Stack: Node >=22.13 (`node:sqlite`), ESM, TypeScript 7, `hono` (server JSX + bro
 ## Layering rules (keep these true)
 
 - Dependencies point down: `index` -> `app`/`lifecycle` -> `routes` -> `services`/`system` -> `lib`. Services and `system` never import `routes` or `ui`. Routes only translate HTTP to service calls.
-- The browser imports nothing from the server except `src/shared/` (types and `SERVICE_ACTIONS`). Server code never imports `src/ui/client`.
+- The browser imports nothing from the server except `@gh-panel/shared`. Server code never imports `src/ui/client`.
 - No `process.env` outside `config.ts` (and the env scrub in `router9/index.ts`). Pass `Config` into services.
 - Errors in routes: throw `HttpError(msg, status)`; do not write per-route try/catch that builds JSON. Unknown errors become 500 and are logged as `[api] ...`.
 - Service lookup by URL must go through `findService()` (own-property check), never `services[name]` directly.
@@ -68,9 +70,13 @@ Stack: Node >=22.13 (`node:sqlite`), ESM, TypeScript 7, `hono` (server JSX + bro
 - `c.html(<Layout />)` does not emit a doctype; `Layout` adds it with `raw("<!DOCTYPE html>")`. Without it browsers use quirks mode.
 - JSX escapes text, so there is no `esc()` helper and no `innerHTML`. Never use `dangerouslySetInnerHTML` with server-provided text. Links built from server data must be checked (`isHttpUrl`).
 - Styling lives only in `src/ui/styles/*.css` (no inline `<style>`, no inline style attributes). Add new rules to the file for their concern and import new files from `index.css`.
-- Keep the browser app dependency-free apart from `hono`. Shared shapes go in `src/shared/types.ts`, and API calls go through `api.ts`, not `fetch` in components.
+- Keep the browser app dependency-free apart from `hono`. Shared shapes go in `packages/shared`, and API calls go through `api.ts`, not `fetch` in components.
 - The app polls: `/api/services` and `/api/system` every 5 s; uptime and server time tick locally every second between polls. Keep list items keyed so the DOM is patched, not replaced (text selection, e.g. the IP, must survive a poll).
 
 ## Testing without Tailscale
 
 The sandbox or a dev machine usually has neither Tailscale nor sudo. To check bind behavior, run with `BIND_ADDRESS=127.0.0.2` and confirm requests to `127.0.0.1` are refused. Test 9router the same way: start it from the API, check `127.0.0.2:20128` answers and `127.0.0.1:20128` is refused, then round-trip `GET`/`POST /api/services/9router/config` (a fake `<tmp>/panel-9router/db/data.sqlite` with the required tables is enough to test export/import). Test the SOCKS5 service with `curl --noproxy '*' -x socks5h://u:p@127.0.0.2:1080 ...` (unset `http_proxy`/`ALL_PROXY` first, or curl may bypass it) or a raw socket client. Test the proxy by chaining it to the panel (`curl -x http://u:p@127.0.0.2:3128 -u admin:pass http://127.0.0.2:3000/api/services`). The browser app can be exercised without a browser by bundling it as an IIFE and running it in jsdom with a `fetch` bridge to the running server. The real `ssh` and `tailscale` paths can only be verified on an actual runner.
+
+## Desktop client (`apps/client/`)
+
+Separate Tauri 2 app (Vite + Preact + TypeScript UI in `apps/client/src`, Rust in `apps/client/src-tauri/src/lib.rs`); it is not part of the panel build and the panel code never imports it. The UI does the GitHub REST calls itself (`github.ts`: dispatch, list runs, cancel). Rust handles what a webview cannot: secrets in the OS keychain (`keyring`), panel calls over plain HTTP (`panel_request`, `/api/*` only, basic auth, no system proxy), and the local `tailscale` CLI (`tailscale_status` finds the runner by `TAILSCALE_HOSTNAME`, `set_exit_node`). Rules: `dispatch` returns no run id, so the run is the newest one created after the dispatch; always clear the client's exit node before the runner goes away (Stop, run ended, window close); the TUN switch must call the panel's `tailscale/toggles/exit-node` toggle first and wait for `ExitNodeOption` before `tailscale set --exit-node`. Check with `npm run build -w @gh-panel/client` and `cd apps/client/src-tauri && cargo check`. Setup guide for people new to Rust: `apps/client/README.md`.

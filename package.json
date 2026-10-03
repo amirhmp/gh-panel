@@ -1,33 +1,31 @@
 {
   "name": "gh-panel",
   "version": "1.0.0",
-  "type": "module",
   "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "engines": {
     "node": ">=22.13"
   },
   "scripts": {
-    "build": "tsx scripts/build.ts",
-    "start": "node --enable-source-maps dist/server.js",
-    "dev:server": "tsx watch --clear-screen=false src/index.ts",
-    "dev:ui": "tsx scripts/build.ts --ui --watch",
-    "typecheck": "tsc -p tsconfig.json && tsc -p src/ui/client/tsconfig.json",
+    "build": "npm run build -w @gh-panel/panel",
+    "start": "npm start -w @gh-panel/panel",
+    "dev": "npm run dev:server -w @gh-panel/panel",
+    "dev:ui": "npm run dev:ui -w @gh-panel/panel",
+    "client": "npm run dev:app -w @gh-panel/client",
+    "client:build": "npm run build:app -w @gh-panel/client",
+    "typecheck": "npm run typecheck --workspaces --if-present",
     "zip": "tsx scripts/zip.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "prepare": "husky"
-  },
-  "dependencies": {
-    "@hono/node-server": "^1.13.0",
-    "dotenv": "^18.0.5",
-    "hono": "^4.6.0",
-    "proxy": "^2.2.0"
+    "prepare": "husky || echo husky skipped"
   },
   "devDependencies": {
     "@types/archiver": "^8.0.0",
-    "@types/node": "^22.20.4",
     "archiver": "^8.0.0",
-    "esbuild": "^0.28.2",
     "husky": "^9.1.7",
     "prettier": "^3.9.9",
     "prettier-plugin-organize-imports": "^4.3.0",

@@ -16,6 +16,42 @@ The top of the panel is a single **Server** card with: the runner's public IP an
 
 Once running, use the panel to install `ssh` and `9router` (one **install** button per card; start, stop, restart and config buttons appear once installed) and to start/stop/restart `ssh`, `proxy`, `socks` and `9router`. The **Shut down** button (in the Server card) stops them and ends the workflow.
 
+## Repository layout (npm workspaces)
+
+```
+apps/
+  panel/            the server that runs on the GitHub runner (Hono) and its browser UI
+  client/           the desktop client (Tauri: Rust + Preact), see apps/client/README.md
+packages/
+  shared/           @gh-panel/shared: API types, default ports and route paths used by all apps
+.github/workflows/  panel.yml (the runner), client.yml (builds the desktop installers)
+```
+
+`@gh-panel/shared` is plain TypeScript with no build step: the panel (esbuild), the client (Vite) and `tsc` read its source directly. If the panel and the client must agree on something (a port, a URL path, a response shape), it belongs there. All commands below run from the repository root.
+
+## Desktop client (`apps/client/`)
+
+A [Tauri](https://tauri.app) app (Rust + Preact) that drives the workflow from your computer, so you never open GitHub or the panel in a browser.
+
+- **Run / Stop**: dispatches `panel.yml` with your GitHub token and follows the run. Stop asks the panel to shut down cleanly (`POST /api/shutdown`) and falls back to cancelling the run.
+- **Bottom bar, always visible**: panel (3000), HTTP proxy (3128) and SOCKS5 (1080) addresses. Click one to copy it. They are dimmed until the runner is up, and show the real ports once the panel reports them.
+- **TUN switch**: turns the runner into your exit node on **both sides**. It calls the panel (`PUT /api/services/tailscale/toggles/exit-node`) so the runner advertises itself, waits until your tailnet approves it, then runs `tailscale set --exit-node=<runner>` on your computer. Switching off (or stopping the run, or closing the app) clears the exit node first, so you are never left routed through a runner that is gone.
+- **Services**: start/stop/restart/install the panel's services without leaving the app.
+
+Requirements on your computer: Tailscale installed and connected to the same tailnet (the client finds the runner through the local `tailscale` CLI and reaches the panel over the tailnet). On Linux, allow your user to change Tailscale settings once: `sudo tailscale set --operator=$USER`. The exit node must be approved in the Tailscale admin console unless an `autoApprovers` rule does it.
+
+Token: a fine-grained GitHub token with **Actions: read and write** on the repository (or a classic token with `repo` + `workflow`). The token and the panel password are stored in the OS keychain; the other settings in a JSON file in the app's config folder.
+
+```
+npm install              # once, from the repository root
+npm run client           # run the app in development mode
+npm run client:build     # installer for this OS
+```
+
+New to Rust? **apps/client/README.md** walks through the setup (Windows first).
+
+Installers for Windows, macOS and Linux can also be built on GitHub: **Actions → Build desktop client → Run workflow**, then download the artifacts. Linux builds need `libwebkit2gtk-4.1-dev`, `libdbus-1-dev`, `librsvg2-dev` and `libappindicator3-dev`.
+
 ## GitHub secrets (Settings → Secrets and variables → Actions)
 
 | Secret              | Sample value                  | Notes                                                                                                              |
@@ -136,7 +172,7 @@ flowchart LR
   lifecycle --> system
   servicesReg --> impls["services/*.ts<br/>one class per service"]
   impls --> lib["lib/*<br/>exec, errors"]
-  routes --> shared["shared/types.ts"]
+  routes --> shared["packages/shared"]
   system --> shared
   client["ui/client/*<br/>browser app"] --> shared
   styles["ui/styles/*.css"] -.->|"bundled to styles.css"| layout
@@ -226,6 +262,8 @@ flowchart LR
 
 ## Project layout
 
+Paths in this section are relative to `apps/panel/`. The API contracts (`types.ts`, ports, route paths) live in `packages/shared/src`.
+
 ```
 src/
   index.ts              entry point: config, services, app, listen
@@ -245,7 +283,7 @@ src/
   system/               facts about the VM
     info.ts               uptime, server time, per-interface traffic (/proc/net/dev)
     runner.ts             public IP + geolocation (ipinfo.io, ipwho.is, ipify.org; cached 10 min)
-  shared/types.ts       API contracts, imported by both server and browser
+  (shared/ moved to packages/shared: API contracts, ports, route paths)
   lib/                  exec helpers, HttpError
   ui/
     Layout.tsx            server-rendered HTML shell (hono/jsx)
@@ -269,28 +307,27 @@ The API, the panel and the startup/shutdown logic pick it up from the registry; 
 
 Needs Node >= 22.13. TypeScript is compiled by [esbuild](https://esbuild.github.io); `tsc` is only used to type-check.
 
-| Command               | What it does                                                                                           |
-| --------------------- | ------------------------------------------------------------------------------------------------------ |
-| `npm ci`              | Install dependencies (including the dev toolchain)                                                     |
-| `npm run build`       | Build `dist/` (server, browser app, CSS)                                                               |
-| `npm start`           | Run the built server (`node dist/server.js`); build first. Uses real environment variables, not `.env` |
-| `npm run dev:server`  | Server from source, restarted on change (`tsx watch`), reads `.env`                                    |
-| `npm run dev:ui`      | Rebuilds the browser app and CSS on change (refresh the browser to see it)                             |
-| `npm run start:local` | Production-like local run: the built `dist/` with `.env` loaded                                        |
-| `npm run typecheck`   | Type-check the server and the browser app                                                              |
-| `npm run zip`         | Create `project.zip` from the files git does not ignore                                                |
+| Command             | What it does                                                                                           |
+| ------------------- | ------------------------------------------------------------------------------------------------------ |
+| `npm ci`            | Install dependencies of every workspace (including the dev toolchain)                                  |
+| `npm run build`     | Build `dist/` (server, browser app, CSS)                                                               |
+| `npm start`         | Run the built server (`node dist/server.js`); build first. Uses real environment variables, not `.env` |
+| `npm run dev`       | Panel server from source, restarted on change (`tsx watch`), reads `apps/panel/.env`                   |
+| `npm run dev:ui`    | Rebuilds the browser app and CSS on change (refresh the browser to see it)                             |
+| `npm run typecheck` | Type-check every workspace (panel server, panel browser app, client)                                   |
+| `npm run zip`       | Create `project.zip` from the files git does not ignore                                                |
 
 ## Local run
 
 Local development needs no Tailscale and no GitHub. Setting `BIND_ADDRESS` puts the panel in local mode: the `tailscale` step is skipped, `ssh` refuses to start (no users created, no sshd), and everything listens on that address.
 
 ```
-cp .env.example .env     # then adjust the values
+cp apps/panel/.env.example apps/panel/.env     # then adjust the values
 npm ci
 npm run dev              # open http://127.0.0.1:3000
 ```
 
-`.env` is gitignored and is loaded by `npm run dev` and `npm run start:local` only; on a runner the same variables come from repository secrets. Restart `npm run dev` after editing `.env`.
+`apps/panel/.env` is gitignored and is loaded by `npm run dev` only; on a runner the same variables come from repository secrets. Restart `npm run dev` after editing `.env`.
 
 | Variable                            | Local value    | Purpose                                                        |
 | ----------------------------------- | -------------- | -------------------------------------------------------------- |

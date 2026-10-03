@@ -1,0 +1,10 @@
+{
+  "name": "@gh-panel/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Contracts shared by the panel server, the panel's browser UI and the desktop client: API types, default ports, route paths.",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

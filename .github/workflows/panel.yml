@@ -18,14 +18,15 @@ jobs:
         run: curl -fsSL https://tailscale.com/install.sh | sh
 
       # The panel is TypeScript: build it (dist/), then drop the dev toolchain.
+      # npm workspaces: install only what the panel needs (not the desktop client).
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --workspace=@gh-panel/panel
 
       - name: Build panel
-        run: npm run build
+        run: npm run build --workspace=@gh-panel/panel
 
       - name: Remove dev dependencies
-        run: npm prune --omit=dev
+        run: npm prune --omit=dev --workspace=@gh-panel/panel
 
       # OpenSSH server and 9router are not installed here: the panel installs
       # them on demand (install button on their cards), then starts them.
@@ -37,4 +38,4 @@ jobs:
           # Optional repository variable; empty means the default (github-ubuntu)
           TAILSCALE_HOSTNAME: ${{ vars.TAILSCALE_HOSTNAME }}
           PROXY_CREDENTIALS: ${{ secrets.PROXY_CREDENTIALS }}
-        run: npm start
+        run: npm start --workspace=@gh-panel/panel
